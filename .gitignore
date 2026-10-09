@@ -6,3 +6,8 @@ xcuserdata/
 DerivedData/
 .DS_Store
 .env
+android/local.properties
+android/.gradle/
+android/build/
+android/*/build/
+android/.kotlin/
