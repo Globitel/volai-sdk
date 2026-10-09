@@ -7,7 +7,7 @@ Voice runs as **plain PCM over one WebSocket**. No WebRTC, no media server libra
 | Platform | Folder | Status |
 |---|---|---|
 | Web (TypeScript) | [`web/`](web) | reference implementation, used by the Volai website widget |
-| iOS (Swift, SPM) | [`ios/`](ios) | in progress |
+| iOS (Swift, SPM) | [`ios/`](ios) | available: chat, voice, reconnect, half duplex; verified in the simulator |
 | Android (Kotlin) | `android/` | planned |
 | React Native | `react-native/` | planned |
 | Flutter | `flutter/` | planned |
