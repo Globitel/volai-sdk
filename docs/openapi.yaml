@@ -1,0 +1,388 @@
+openapi: 3.1.0
+info:
+  title: Volai Mobile SDK API
+  version: "1.0"
+  description: |
+    Contract for the Volai client SDKs (iOS, Android, React Native, Flutter, web).
+    Base path: `https://<host>/gicc/api/sdk/v1`. Every response carries
+    `X-Volai-Contract: 1`. Breaking changes ship as `/sdk/v2`.
+
+    Credentials:
+    * **App key** (`type: sdk`) — publishable, shipped inside the app. Sent as
+      `Authorization: Bearer <key>` on agent lookup, session creation and verification.
+    * **Secret key** (`type: sdk_secret`) — server-side only. Mints session grants.
+    * **Chat token** — returned by session creation for chat; sent as
+      `Authorization: Bearer <chat_token>` (or `chat_token` query/body) on chat calls.
+    * **Socket token** — returned by session creation for voice; single use, 5 minutes.
+
+    Voice: two transports. `ws_audio` (default for SDK sessions) is one
+    WebSocket carrying JSON control frames and raw PCM frames, no WebRTC on
+    the client. `webrtc` (mediasoup signalling over `wss://<host>/gicc/ws/client`)
+    remains for legacy clients. Read `voiceTransports` from the agent lookup and `transport` from
+    the session response rather than assume. Details: voice-ws-protocol.md.
+
+    Video: contract 1 carries no video on the ws_audio socket. Live-agent video
+    is a WebRTC feature; web clients add a video-only WebRTC leg (see
+    voice-ws-protocol.md, "Video with a live agent"), native SDKs should not
+    implement video in contract 1.
+servers:
+  - url: https://{host}/gicc/api/sdk/v1
+    variables:
+      host:
+        default: gicc.globitel.com
+tags:
+  - name: Discovery
+  - name: Sessions
+  - name: Chat
+  - name: Verification
+  - name: Grants
+paths:
+  /health:
+    get:
+      tags: [Discovery]
+      summary: Reachability and contract version
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  contract: { type: integer, example: 1 }
+                  voice_transports:
+                    type: array
+                    items: { type: string, enum: [webrtc, ws_audio] }
+  /agents/{agentId}:
+    get:
+      tags: [Discovery]
+      summary: Public agent information
+      description: The agent must be public, belong to the key's tenant and sit inside the key's agent scope.
+      security: [{ appKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Agent info
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicAgent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /agents/{agentId}/verification/send:
+    post:
+      tags: [Verification]
+      summary: Send a one-time code to a phone or email
+      description: Only for agents whose widget settings require verification. Rate limited per IP and per destination.
+      security: [{ appKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, destination]
+              properties:
+                channel: { type: string, enum: [phone, email] }
+                destination: { type: string, example: "+962791234567" }
+                language: { type: string, example: ar }
+      responses:
+        "200": { description: Code sent }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /agents/{agentId}/verification/check:
+    post:
+      tags: [Verification]
+      summary: Check a one-time code and receive a verification token
+      security: [{ appKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, destination, code]
+              properties:
+                channel: { type: string, enum: [phone, email] }
+                destination: { type: string }
+                code: { type: string }
+      responses:
+        "200":
+          description: Verified. Pass the token in `verification_tokens` when creating a session.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_token: { type: string }
+                  expires_at: { type: string, format: date-time }
+        "400": { description: Wrong or expired code }
+  /sessions:
+    post:
+      tags: [Sessions]
+      summary: Create a voice or chat session
+      security: [{ appKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSessionRequest" }
+      responses:
+        "200":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/VoiceSession"
+                  - $ref: "#/components/schemas/ChatSession"
+        "400": { description: Invalid request, unsupported transport, or invalid phone/email }
+        "401": { description: Invalid key, invalid or replayed grant, or wrong public link password }
+        "402": { description: Credit bundle exhausted }
+        "403":
+          description: Verification required (`reason: verification_required`) or agent outside the key's scope
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429":
+          description: Tenant voice concurrency limit, guardrail cooldown, or key rate limit
+        "504": { description: The session service did not respond in time }
+  /sessions/{sessionId}/messages:
+    post:
+      tags: [Chat]
+      summary: Send a user message
+      security: [{ chatToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/sessionId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message_id, content]
+              properties:
+                message_id: { type: string, format: uuid }
+                content: { type: string }
+                attachment: { type: object, nullable: true }
+      responses:
+        "200": { description: Accepted; the reply arrives on the events stream (NDJSON may also be streamed in this response) }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Session message cap or tenant monthly chat quota reached }
+  /sessions/{sessionId}/acks:
+    post:
+      tags: [Chat]
+      summary: Acknowledge delivery or read of an agent message
+      security: [{ chatToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/sessionId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message_id, status]
+              properties:
+                message_id: { type: string }
+                status: { type: string, enum: [delivered, read] }
+      responses:
+        "200": { description: OK }
+  /sessions/{sessionId}/typing:
+    post:
+      tags: [Chat]
+      summary: Typing indicator from the user
+      security: [{ chatToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/sessionId" }]
+      responses:
+        "200": { description: OK }
+  /sessions/{sessionId}/events:
+    get:
+      tags: [Chat]
+      summary: Server-sent events for a chat session
+      description: |
+        `text/event-stream`. Pass `chat_token` as a query parameter (EventSource
+        cannot set headers) and `cursor` to resume after a disconnect. Event types:
+        `ack`, `chunk`, `chat`, `chat_complete`, `human_chat`, `typing`, `system`,
+        `LIVE_AGENT_CONNECTED`, `LIVE_AGENT_DISCONNECTED`, `handoff`, `context_update`,
+        `SESSION_ENDED`, `error`.
+      security: [{ chatTokenQuery: [] }]
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200": { description: Event stream }
+  /sessions/{sessionId}/status:
+    get:
+      tags: [Chat]
+      summary: Chat session status
+      security: [{ chatToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/sessionId" }]
+      responses:
+        "200": { description: Status }
+  /sessions/{sessionId}/close:
+    post:
+      tags: [Sessions]
+      summary: Close a chat session
+      description: Voice sessions end with `session.end` on the socket (ws_audio) or by closing the socket.
+      security: [{ chatToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/sessionId" }]
+      responses:
+        "200": { description: Closed }
+  /session-grants:
+    post:
+      tags: [Grants]
+      summary: Mint a session grant (server to server)
+      description: |
+        Called by the customer's backend with the **secret** key. The returned grant
+        is passed by the app in `session_grant` when creating a session. It is
+        single use and expires after `ttl_seconds` (default 300, max 900). A grant
+        makes the session's caller identity trusted: the phone it carries counts
+        as verified and `external_user_id` is placed in the session context.
+      security: [{ secretKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                external_user_id: { type: string, maxLength: 128 }
+                caller_phone: { type: string, description: "International format", example: "+962791234567" }
+                caller_name: { type: string, maxLength: 120 }
+                caller_email: { type: string, format: email }
+                agent_id: { type: string, description: "Optional. Restrict the grant to one public agent id." }
+                context:
+                  type: object
+                  description: Up to 32 scalar values, keys alphanumeric or underscore
+                  additionalProperties: { type: [string, number, boolean] }
+                ttl_seconds: { type: integer, minimum: 30, maximum: 900, default: 300 }
+              anyOf:
+                - required: [external_user_id]
+                - required: [caller_phone]
+      responses:
+        "201":
+          description: Grant issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_grant: { type: string }
+                  expires_at: { type: string, format: date-time }
+                  ttl_seconds: { type: integer }
+                  contract: { type: integer }
+        "400": { description: Invalid field }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+components:
+  securitySchemes:
+    appKey: { type: http, scheme: bearer, description: Publishable `sdk` key }
+    secretKey: { type: http, scheme: bearer, description: Server-side `sdk_secret` key }
+    chatToken: { type: http, scheme: bearer, description: chat_token from session creation }
+    chatTokenQuery: { type: apiKey, in: query, name: chat_token }
+  parameters:
+    agentId:
+      in: path
+      name: agentId
+      required: true
+      schema: { type: string, description: "32-character public agent id" }
+    sessionId:
+      in: path
+      name: sessionId
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Unauthorized:
+      description: Missing or invalid credential
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Agent or session not found, or not available to this app
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many requests; honour `Retry-After`
+  schemas:
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+        code: { type: string }
+        reason: { type: string }
+    PublicAgent:
+      type: object
+      properties:
+        api_id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        type: { type: string }
+        agentArchitecture: { type: string, enum: [pipeline, openai_realtime] }
+        embedMode: { type: string, enum: [chat, voice, both] }
+        voiceTransports:
+          type: array
+          items: { type: string, enum: [webrtc, ws_audio] }
+        defaultVoiceTransport: { type: string }
+        publicLinkPasswordRequired: { type: boolean }
+        widgetContactFields:
+          type: object
+          properties:
+            askPhone: { type: boolean }
+            askName: { type: boolean }
+            askEmail: { type: boolean }
+            verifyPhone: { type: boolean }
+            verifyEmail: { type: boolean }
+        widgetLanguage: { type: string }
+        widgetDefaultCountry: { type: string }
+        logoUrl: { type: string }
+        branding: { type: object }
+    CreateSessionRequest:
+      type: object
+      required: [agent_id]
+      properties:
+        agent_id: { type: string, description: "32-character public agent id" }
+        type: { type: string, enum: [voice, chat], default: chat }
+        transport: { type: string, enum: [ws_audio, webrtc], description: "Voice only. Omit to let the server pick (ws_audio for SDK sessions)." }
+        device_id: { type: string, maxLength: 120, description: "Stable per-install id; used for quota keying when no grant is present" }
+        caller_name: { type: string }
+        caller_phone: { type: string, description: "International format; ignored when a grant is present" }
+        caller_email: { type: string }
+        context:
+          type: object
+          description: Initial context variables visible to the agent
+        verification_tokens:
+          type: object
+          properties:
+            phone: { type: string }
+            email: { type: string }
+        session_grant: { type: string, description: "From POST /session-grants" }
+        public_link_password: { type: string }
+    VoiceSession:
+      type: object
+      properties:
+        session_id: { type: string, format: uuid }
+        type: { type: string, enum: [voice] }
+        transport: { type: string, enum: [ws_audio, webrtc] }
+        ws_url: { type: string, description: "Socket URL with the token already attached (ws_audio: /gicc/ws/sdk/voice, webrtc: /gicc/ws/client)" }
+        ws_token: { type: string }
+        ws_token_expires_in: { type: integer, example: 300 }
+        contract: { type: integer }
+    ChatSession:
+      type: object
+      properties:
+        session_id: { type: string, format: uuid }
+        type: { type: string, enum: [chat] }
+        chat_token: { type: string }
+        events_url: { type: string }
+        initial_greeting:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            content: { type: string }
+        idle_minutes: { type: integer, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        contract: { type: integer }

@@ -1,0 +1,8 @@
+{
+  "name": "volai-sdk-conformance",
+  "private": true,
+  "type": "module",
+  "description": "Drives the Volai SDK contract end to end and prints a pass/fail report.",
+  "scripts": { "start": "node conformance.mjs" },
+  "dependencies": { "ws": "^8.18.0" }
+}

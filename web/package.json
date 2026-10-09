@@ -1,0 +1,19 @@
+{
+  "name": "@volai/web-sdk",
+  "version": "0.1.0",
+  "description": "Reference browser client for the Volai SDK contract: sessions, chat over REST + SSE, and WebSocket PCM voice.",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/Globitel/volai-sdk", "directory": "web" },
+  "type": "module",
+  "main": "./dist/volai-web-sdk.js",
+  "module": "./dist/volai-web-sdk.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/volai-web-sdk.js" } },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": { "typescript": "^5.5.3", "vite": "^5.4.1" },
+  "sideEffects": false
+}

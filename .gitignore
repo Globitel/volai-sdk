@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.build/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+.DS_Store
+.env
