@@ -11,3 +11,17 @@ android/.gradle/
 android/build/
 android/*/build/
 android/.kotlin/
+react-native/node_modules
+react-native/lib/
+react-native/example/node_modules/
+react-native/example/ios/Pods/
+react-native/example/ios/build/
+react-native/example/android/.gradle/
+react-native/example/android/build/
+react-native/example/android/app/build/
+react-native/example/vendor/
+react-native/android/build/
+react-native/android/.cxx/
+react-native/example/android/app/.cxx/
+react-native/example/android/local.properties
+react-native/example/ios/*.xcworkspace/xcshareddata/

@@ -55,6 +55,8 @@ xcodebuild test -scheme VolaiSDK -destination 'platform=iOS Simulator,name=iPhon
 
 `VOLAI_WS_BASE=ws://localhost:8085` rewrites the socket origin for a development stack whose WebSocket server runs on another port. Under `xcodebuild`, prefix the variables with `TEST_RUNNER_`.
 
+The simulator routes audio through the Mac's audio daemon. If the voice test (or any app using the SDK) aborts about nine seconds after `connect()` with `AURemoteIO::Cleanup ... RPC timeout. Apparently deadlocked` in `-[AVAudioEngine inputNode]`, the simulator's audio bridge on that Mac is wedged, not the SDK: the same build runs on macOS (`swift test`) and on a device. Restarting CoreSimulator or the Mac clears it.
+
 ## Not in contract 1
 
 Live-agent video. Apps that need it keep the WebRTC transport outside this SDK.

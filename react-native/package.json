@@ -1,0 +1,39 @@
+{
+  "name": "@volai/react-native-sdk",
+  "version": "0.1.0",
+  "description": "React Native client for the Volai SDK contract: chat and WebSocket PCM voice, bridging the native iOS and Android Volai libraries.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Globitel/volai-sdk",
+    "directory": "react-native"
+  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "files": [
+    "src",
+    "lib",
+    "ios",
+    "android",
+    "*.podspec",
+    "README.md",
+    "!android/build",
+    "!ios/build"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "sync-native": "sh scripts/sync-native.sh"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": ">=0.71"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "react": "18.3.1",
+    "react-native": "0.76.0",
+    "typescript": "^5.5.3"
+  }
+}

@@ -64,20 +64,9 @@ final class LiveTests: XCTestCase {
         if let wsBase = env.wsBase {
             // Development only: point the socket at the dev WebSocket port.
             let rewritten = call.info.wsURL.absoluteString.replacingOccurrences(of: "^wss?://[^/]+", with: wsBase, options: .regularExpression)
-            try await LiveTests.runCall(client: client, agent: env.agent, deviceId: "ios-live-test", overrideURL: URL(string: rewritten)!)
-            return
+            call.socketURLOverride = URL(string: rewritten)
         }
         try await LiveTests.runCall(call: call)
-    }
-
-    private static func runCall(client: VolaiClient, agent: String, deviceId: String, overrideURL: URL) async throws {
-        // Re-create the session with the rewritten socket URL (dev stacks only).
-        let json = try await client.request("/sessions", method: "POST", body: SessionRequest(agentId: agent, deviceId: deviceId).body(type: "voice", transport: "ws_audio"))
-        var raw = json.raw
-        raw["ws_url"] = overrideURL.absoluteString.replacingOccurrences(of: "\\?.*$", with: "", options: .regularExpression) + "?" + (URLComponents(string: json.string("ws_url")!)?.query ?? "")
-        let info = try VoiceSessionInfo(json: JSONObject(raw))
-        let call = VolaiVoiceCall(info: info, mode: .fullDuplex, sdkName: "volai-ios-test", sdkVersion: VolaiClient.sdkVersionString, session: client.session)
-        try await runCall(call: call)
     }
 
     private static func runCall(call: VolaiVoiceCall) async throws {

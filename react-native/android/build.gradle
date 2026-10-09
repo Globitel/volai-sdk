@@ -1,0 +1,32 @@
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.7.3"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21"
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "org.jetbrains.kotlin.android"
+
+android {
+    namespace "com.globitel.volai.reactnative"
+    compileSdkVersion rootProject.hasProperty("compileSdkVersion") ? rootProject.ext.compileSdkVersion : 35
+    defaultConfig {
+        minSdkVersion rootProject.hasProperty("minSdkVersion") ? rootProject.ext.minSdkVersion : 24
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+    sourceSets { main { java.srcDirs += "src/main/kotlin" } }
+}
+
+repositories { google(); mavenCentral() }
+
+dependencies {
+    implementation "com.facebook.react:react-android"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+}

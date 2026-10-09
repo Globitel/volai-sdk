@@ -9,7 +9,7 @@ Voice runs as **plain PCM over one WebSocket**. No WebRTC, no media server libra
 | Web (TypeScript) | [`web/`](web) | reference implementation, used by the Volai website widget |
 | iOS (Swift, SPM) | [`ios/`](ios) | available: chat, voice, reconnect, half duplex; verified in the simulator |
 | Android (Kotlin) | [`android/`](android) | available: chat, voice, reconnect, half duplex; verified in the emulator |
-| React Native | `react-native/` | planned |
+| React Native | [`react-native/`](react-native) | available: bridge over the native libraries, example app |
 | Flutter | `flutter/` | planned |
 
 The contract every SDK implements: [`docs/openapi.yaml`](docs/openapi.yaml) (REST) and [`docs/voice-ws-protocol.md`](docs/voice-ws-protocol.md) (voice socket). Changes by server release: [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
