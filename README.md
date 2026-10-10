@@ -1,5 +1,7 @@
 # Volai SDK
 
+[![CI](https://github.com/Globitel/volai-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/Globitel/volai-sdk/actions/workflows/ci.yml)
+
 Client SDKs for [Volai](https://gicc.globitel.com), Globitel's AI contact-center platform: hold a chat or a voice conversation with a Volai AI agent from your own app, with hand-off to a human agent when the AI decides so.
 
 Voice runs as **plain PCM over one WebSocket**. No WebRTC, no media server library on the client.

@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web client
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+
+  conformance-tool:
+    name: Conformance tool (syntax)
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: tools/conformance } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: tools/conformance/package-lock.json }
+      - run: npm ci
+      - run: node --check conformance.mjs && node --check ws_audio_frames.js
+
+  ios:
+    name: iOS (Swift package)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - run: swift build
+      # Live tests skip without VOLAI_* variables; the protocol, buffer,
+      # resampler and model tests run.
+      - run: swift test
+
+  android:
+    name: Android (Kotlin library)
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: android } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :volai-sdk:testDebugUnitTest :volai-sdk:assembleRelease
+
+  react-native:
+    name: React Native (TypeScript)
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: react-native } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: react-native/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+      # The vendored native sources must match ios/ and android/.
+      - run: sh scripts/sync-native.sh && git diff --exit-code -- ios android
+
+  flutter:
+    name: Flutter (plugin)
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: flutter/volai_sdk } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable }
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: cd example && flutter pub get && flutter test
+      - run: sh scripts/sync-native.sh && git diff --exit-code -- ios android
