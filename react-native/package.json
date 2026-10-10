@@ -1,6 +1,6 @@
 {
   "name": "@volai/react-native-sdk",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "React Native client for the Volai SDK contract: chat and WebSocket PCM voice, bridging the native iOS and Android Volai libraries.",
   "license": "Apache-2.0",
   "repository": {

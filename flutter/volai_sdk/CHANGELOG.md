@@ -1,6 +1,10 @@
-## 0.1.2
+## 0.1.3
 
 - Published by the release workflow (pub.dev automated publishing). No code changes.
+
+## 0.1.2
+
+- Version bump only; not published to pub.dev.
 
 ## 0.1.1
 

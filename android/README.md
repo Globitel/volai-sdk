@@ -7,7 +7,7 @@ Kotlin library implementing the Volai SDK contract (contract 1): chat over REST 
 From Maven Central:
 
 ```kotlin
-dependencies { implementation("com.globitel.volai:volai-sdk:0.1.2") }
+dependencies { implementation("com.globitel.volai:volai-sdk:0.1.3") }
 ```
 
 The AAR is also attached to each [GitHub release](https://github.com/Globitel/volai-sdk/releases) for apps that vendor libraries; it needs `com.squareup.okhttp3:okhttp:4.12.0` and `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0` alongside. A checkout can also be included with `includeBuild("path/to/volai-sdk/android")`.

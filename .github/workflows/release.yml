@@ -73,18 +73,13 @@ jobs:
   publish-pub:
     name: Publish to pub.dev
     needs: build
-    runs-on: ubuntu-24.04
-    # Automated publishing: the volai_sdk package on pub.dev lists this
-    # repository, the tag pattern v{{version}} and the "pub.dev" GitHub
-    # environment, so no credential is stored.
-    environment: pub.dev
-    defaults: { run: { working-directory: flutter/volai_sdk } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with: { channel: stable }
-      - run: flutter pub get
-      - run: flutter pub publish --force
+    # pub's own reusable workflow: setup-dart provisions the OIDC token for
+    # pub.dev, which lists this repository, the tag pattern v{{version}} and
+    # the "pub.dev" GitHub environment as its automated publisher.
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: flutter/volai_sdk
+      environment: pub.dev
 
   publish-maven:
     name: Publish to Maven Central

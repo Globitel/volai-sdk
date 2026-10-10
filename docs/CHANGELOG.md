@@ -23,4 +23,5 @@ Contract version is reported in `X-Volai-Contract` and in `GET /gicc/api/sdk/v1/
 |---|---|---|
 | v0.1.0 | 2026-10-10 | First release: iOS (Swift package), Android (Kotlin library), React Native, Flutter, web reference client, conformance tool. Contract 1. No live-agent video. |
 | v0.1.1 | 2026-10-10 | `@volai/react-native-sdk` and `@volai/web-sdk` published to npm by the release workflow (trusted publishing). No code changes. |
-| v0.1.2 | 2026-10-10 | `volai_sdk` published to pub.dev by the release workflow (automated publishing). No code changes. |
+| v0.1.2 | 2026-10-10 | npm only; the pub.dev job of this release did not complete. |
+| v0.1.3 | 2026-10-10 | `volai_sdk` published to pub.dev and `com.globitel.volai:volai-sdk` to Maven Central by the release workflow. No code changes. |
