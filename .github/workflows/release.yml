@@ -99,3 +99,17 @@ jobs:
       # Signs with the in-memory key, uploads to the Central Portal and
       # releases automatically once validation passes.
       - run: ./gradlew --no-daemon --no-configuration-cache :volai-sdk:publishToMavenCentral
+      # The plugin returns before the portal validates the bundle, so ask the
+      # portal until the version is published (or fail after ten minutes).
+      - name: Wait for Maven Central to publish
+        run: |
+          auth=$(printf '%s:%s' "$ORG_GRADLE_PROJECT_mavenCentralUsername" "$ORG_GRADLE_PROJECT_mavenCentralPassword" | base64 -w0)
+          version=${GITHUB_REF_NAME#v}
+          for i in $(seq 1 60); do
+            state=$(curl -sf -H "Authorization: Bearer $auth" "https://central.sonatype.com/api/v1/publisher/published?namespace=com.globitel.volai&name=volai-sdk&version=$version")
+            echo "$(date +%T) $state"
+            case "$state" in *true*) exit 0;; esac
+            sleep 10
+          done
+          echo "com.globitel.volai:volai-sdk:$version was not published by the Central Portal; check Deployments on central.sonatype.com for the validation error" >&2
+          exit 1
