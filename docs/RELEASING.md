@@ -13,7 +13,7 @@ How consumers pick the release up:
 |---|---|
 | iOS | Swift Package Manager resolves the tag: `.package(url: "https://github.com/Globitel/volai-sdk", from: "X.Y.Z")` |
 | Android | AAR attached to the release (`volai-android-sdk-vX.Y.Z.aar`); add it to `libs/` with the OkHttp and coroutines dependencies listed in `android/README.md` |
-| React Native | `npm install github:Globitel/volai-sdk#vX.Y.Z` (the package lives in `react-native/`, published through the tarball on the release until it is on npm) |
+| React Native | `npm install https://github.com/Globitel/volai-sdk/releases/download/vX.Y.Z/volai-react-native-sdk-vX.Y.Z.tgz` (the package lives in `react-native/`, so the repository itself is not npm-installable) |
 | Flutter | `volai_sdk: { git: { url: ..., ref: vX.Y.Z, path: flutter/volai_sdk } }` |
 | Web | tarball on the release, or `web/` built from source |
 

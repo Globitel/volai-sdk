@@ -5,7 +5,7 @@ React Native client for the Volai SDK contract (contract 1): chat over REST and 
 ## Install
 
 ```bash
-npm install github:Globitel/volai-sdk#main --prefix . # or from npm once published
+npm install https://github.com/Globitel/volai-sdk/releases/download/v0.1.0/volai-react-native-sdk-v0.1.0.tgz   # npm once published
 cd ios && pod install
 ```
 

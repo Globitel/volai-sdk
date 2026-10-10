@@ -4,10 +4,10 @@ Swift package implementing the Volai SDK contract (contract 1): chat over REST a
 
 ## Install
 
-Swift Package Manager, from the repository root manifest:
+Swift Package Manager, from the repository root manifest (releases are tagged `vX.Y.Z`):
 
-```
-https://github.com/Globitel/volai-sdk
+```swift
+.package(url: "https://github.com/Globitel/volai-sdk", from: "0.1.0")
 ```
 
 Add the `VolaiSDK` product to your target. Add `NSMicrophoneUsageDescription` to your app's Info.plist for voice.
