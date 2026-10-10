@@ -1,0 +1,27 @@
+name: volai_sdk
+description: Flutter client for the Volai SDK contract - chat over REST and server-sent events, and voice as PCM over one WebSocket - bridging the native iOS and Android Volai libraries.
+version: 0.1.0
+homepage: https://github.com/Globitel/volai-sdk
+repository: https://github.com/Globitel/volai-sdk/tree/main/flutter/volai_sdk
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.globitel.volai.flutter
+        pluginClass: VolaiSdkPlugin
+      ios:
+        pluginClass: VolaiSdkPlugin

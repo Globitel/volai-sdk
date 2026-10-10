@@ -25,3 +25,14 @@ react-native/android/.cxx/
 react-native/example/android/app/.cxx/
 react-native/example/android/local.properties
 react-native/example/ios/*.xcworkspace/xcshareddata/
+flutter/volai_sdk/.dart_tool/
+flutter/volai_sdk/example/.dart_tool/
+flutter/volai_sdk/example/build/
+flutter/volai_sdk/example/ios/Pods/
+flutter/volai_sdk/example/ios/.symlinks/
+flutter/volai_sdk/example/ios/Flutter/ephemeral/
+flutter/volai_sdk/example/android/.gradle/
+flutter/volai_sdk/example/android/local.properties
+flutter/volai_sdk/example/.flutter-plugins*
+flutter/volai_sdk/example/pubspec.lock
+flutter/volai_sdk/pubspec.lock
