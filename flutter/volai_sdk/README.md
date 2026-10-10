@@ -9,7 +9,7 @@ dependencies:
   volai_sdk:
     git:
       url: https://github.com/Globitel/volai-sdk.git
-      ref: v0.1.0
+      ref: v0.1.1
       path: flutter/volai_sdk
 ```
 

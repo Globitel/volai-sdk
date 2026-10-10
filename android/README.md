@@ -9,13 +9,13 @@ Until the package is on Maven Central, take the AAR from the [GitHub release](ht
 ```kotlin
 // build.gradle.kts of your app
 dependencies {
-    implementation(files("libs/volai-android-sdk-v0.1.0.aar"))
+    implementation(files("libs/volai-android-sdk-v0.1.1.aar"))
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
 ```
 
-Or include the module from a checkout: `includeBuild("path/to/volai-sdk/android")` in `settings.gradle.kts` and `implementation("com.globitel.volai:volai-sdk:0.1.0")`.
+Or include the module from a checkout: `includeBuild("path/to/volai-sdk/android")` in `settings.gradle.kts` and `implementation("com.globitel.volai:volai-sdk:0.1.1")`.
 
 Add `RECORD_AUDIO` to your manifest (the library declares it) and request it at runtime before starting a voice call.
 

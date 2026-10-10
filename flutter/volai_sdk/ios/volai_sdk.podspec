@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'volai_sdk'
-  s.version          = '0.1.0'
+  s.version          = '0.1.1'
   s.summary          = 'Flutter client for the Volai SDK contract: chat and WebSocket PCM voice.'
   s.description      = 'Bridges the native iOS Volai library (vendored in volai_sdk/Sources/volai_sdk/VolaiSDK) to Flutter over platform channels.'
   s.homepage         = 'https://github.com/Globitel/volai-sdk'
