@@ -65,7 +65,7 @@ Uplink: 16 kHz, 20 ms frames (640 bytes of PCM). Downlink: 24 kHz, 20 ms frames 
 | Type | Fields | Meaning |
 |---|---|---|
 | `client.hello` | `sdk`, `version`, `platform`, `mode` (`full_duplex` default, or `half_duplex`) | First message after connect |
-| `mic.muted` | `muted` | Uplink is ignored while muted |
+| `mic.muted` | `muted` | Uplink is ignored while muted; the server feeds the agent silence at the frame cadence instead, so a turn that ended just before muting is still detected and answered |
 | `playback.flushed` | `epoch` | Optional: client finished dropping an older epoch |
 | `ping` | `ts` | Answered with `pong` |
 | `stats` | `rtt_ms` | Optional client measurements |
