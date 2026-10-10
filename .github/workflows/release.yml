@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write   # npm trusted publishing (OIDC provenance)
 
 jobs:
   build:
@@ -49,3 +50,22 @@ jobs:
             volai-web-sdk-${{ github.ref_name }}.tgz
             volai-android-sdk-${{ github.ref_name }}.aar
             volai-react-native-sdk-${{ github.ref_name }}.tgz
+
+  publish-npm:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-24.04
+    # Trusted publishing: the npm packages list this repository and this
+    # workflow file as their trusted publisher, so no token is stored.
+    # Requires npm CLI 11.5.1+ (setup-node ships an older npm).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, registry-url: 'https://registry.npmjs.org' }
+      - run: npm install -g npm@latest && npm --version
+      - name: '@volai/web-sdk'
+        working-directory: web
+        run: npm ci && npm publish --access public
+      - name: '@volai/react-native-sdk'
+        working-directory: react-native
+        run: npm ci && npm publish --access public

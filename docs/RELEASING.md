@@ -17,4 +17,12 @@ How consumers pick the release up:
 | Flutter | `volai_sdk: { git: { url: ..., ref: vX.Y.Z, path: flutter/volai_sdk } }` |
 | Web | tarball on the release, or `web/` built from source |
 
-Publishing to npm, pub.dev and Maven Central needs organisation accounts and is not wired yet; the workflow is the place to add it.
+## npm
+
+`@volai/web-sdk` and `@volai/react-native-sdk` publish from the `publish-npm` job through npm trusted publishing (GitHub Actions OIDC, provenance attached, no token stored). Each package lists this repository and `release.yml` as its trusted publisher in its npmjs.com settings. A package has to exist before that setting is available, so the first version of a new package is published by hand from a logged-in machine:
+
+```bash
+cd react-native && npm ci && npm publish   # prepublishOnly builds lib/; publishConfig is public
+```
+
+pub.dev and Maven Central publishing is not wired yet.

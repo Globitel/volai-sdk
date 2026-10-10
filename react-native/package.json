@@ -24,7 +24,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "sync-native": "sh scripts/sync-native.sh"
+    "sync-native": "sh scripts/sync-native.sh",
+    "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
     "react": "*",
@@ -35,5 +36,8 @@
     "react": "18.3.1",
     "react-native": "0.76.0",
     "typescript": "^5.5.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
