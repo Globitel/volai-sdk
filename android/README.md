@@ -4,18 +4,13 @@ Kotlin library implementing the Volai SDK contract (contract 1): chat over REST 
 
 ## Install
 
-Until the package is on Maven Central, take the AAR from the [GitHub release](https://github.com/Globitel/volai-sdk/releases) (`volai-android-sdk-vX.Y.Z.aar`) and add its two runtime dependencies:
+From Maven Central:
 
 ```kotlin
-// build.gradle.kts of your app
-dependencies {
-    implementation(files("libs/volai-android-sdk-v0.1.2.aar"))
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-}
+dependencies { implementation("com.globitel.volai:volai-sdk:0.1.2") }
 ```
 
-Or include the module from a checkout: `includeBuild("path/to/volai-sdk/android")` in `settings.gradle.kts` and `implementation("com.globitel.volai:volai-sdk:0.1.2")`.
+The AAR is also attached to each [GitHub release](https://github.com/Globitel/volai-sdk/releases) for apps that vendor libraries; it needs `com.squareup.okhttp3:okhttp:4.12.0` and `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0` alongside. A checkout can also be included with `includeBuild("path/to/volai-sdk/android")`.
 
 Add `RECORD_AUDIO` to your manifest (the library declares it) and request it at runtime before starting a voice call.
 

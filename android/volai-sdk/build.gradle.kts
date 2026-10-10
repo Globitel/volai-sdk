@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("com.vanniktech.maven.publish")
 }
 
 group = "com.globitel.volai"
@@ -25,8 +26,38 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
-    publishing {
-        singleVariant("release") { withSourcesJar() }
+}
+
+// Maven Central (Central Portal). Credentials and the signing key come from
+// ORG_GRADLE_PROJECT_mavenCentral{Username,Password} and
+// ORG_GRADLE_PROJECT_signingInMemoryKey{,Id,Password} (CI secrets); without
+// them the plugin still builds the publication for publishToMavenLocal.
+mavenPublishing {
+    publishToMavenCentral(automaticRelease = true)
+    signAllPublications()
+    coordinates("com.globitel.volai", "volai-sdk", version.toString())
+    pom {
+        name.set("Volai Android SDK")
+        description.set("Android client for the Volai SDK contract: chat over REST and server-sent events, and voice as PCM over one WebSocket.")
+        url.set("https://github.com/Globitel/volai-sdk")
+        licenses {
+            license {
+                name.set("Apache-2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+            }
+        }
+        developers {
+            developer {
+                id.set("globitel")
+                name.set("Globitel")
+                url.set("https://github.com/Globitel")
+            }
+        }
+        scm {
+            url.set("https://github.com/Globitel/volai-sdk")
+            connection.set("scm:git:https://github.com/Globitel/volai-sdk.git")
+            developerConnection.set("scm:git:ssh://git@github.com/Globitel/volai-sdk.git")
+        }
     }
 }
 

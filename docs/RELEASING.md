@@ -12,7 +12,7 @@ How consumers pick the release up:
 | SDK | Mechanism |
 |---|---|
 | iOS | Swift Package Manager resolves the tag: `.package(url: "https://github.com/Globitel/volai-sdk", from: "X.Y.Z")` |
-| Android | AAR attached to the release (`volai-android-sdk-vX.Y.Z.aar`); add it to `libs/` with the OkHttp and coroutines dependencies listed in `android/README.md` |
+| Android | `implementation("com.globitel.volai:volai-sdk:X.Y.Z")` from Maven Central (published by the release workflow); the AAR is also attached to the release |
 | React Native | `npm install @volai/react-native-sdk` (published by the release workflow; the tarball is also attached to the release) |
 | Flutter | `volai_sdk: ^X.Y.Z` from pub.dev (published by the release workflow) |
 | Web | `npm install @volai/web-sdk`, or the tarball on the release |
@@ -29,4 +29,6 @@ cd react-native && npm ci && npm publish   # prepublishOnly builds lib/; publish
 
 `volai_sdk` publishes from the `publish-pub` job through pub.dev automated publishing (GitHub Actions OIDC, no credential stored). The package's admin page on pub.dev lists this repository, the tag pattern `v{{version}}` and the GitHub environment `pub.dev`; the tag's version must equal `version:` in `flutter/volai_sdk/pubspec.yaml`. The package was first published by hand (`flutter pub publish` from a machine logged in with `dart pub login`) and transferred to the `globitel.com` verified publisher.
 
-Maven Central publishing is not wired yet.
+## Maven Central
+
+`com.globitel.volai:volai-sdk` publishes from the `publish-maven` job with the `com.vanniktech.maven.publish` plugin (Central Portal, automatic release after validation). Four repository secrets feed it: the portal user token as `ORG_GRADLE_PROJECT_mavenCentralUsername` / `...Password`, and the artefact signing key as `ORG_GRADLE_PROJECT_signingInMemoryKey` (armoured private key) / `...KeyPassword`. The public half of the signing key is on keyserver.ubuntu.com and keys.openpgp.org; the private half is kept outside the repository by the maintainers. A new version is visible on central.sonatype.com within minutes and on Maven Central mirrors within an hour or so.
