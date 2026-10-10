@@ -9,7 +9,7 @@ on:
 
 permissions:
   contents: write
-  id-token: write   # npm trusted publishing (OIDC provenance)
+  id-token: write   # npm trusted publishing and pub.dev automated publishing (OIDC)
 
 jobs:
   build:
@@ -69,3 +69,19 @@ jobs:
       - name: '@volai/react-native-sdk'
         working-directory: react-native
         run: npm ci && npm publish --access public
+
+  publish-pub:
+    name: Publish to pub.dev
+    needs: build
+    runs-on: ubuntu-24.04
+    # Automated publishing: the volai_sdk package on pub.dev lists this
+    # repository, the tag pattern v{{version}} and the "pub.dev" GitHub
+    # environment, so no credential is stored.
+    environment: pub.dev
+    defaults: { run: { working-directory: flutter/volai_sdk } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable }
+      - run: flutter pub get
+      - run: flutter pub publish --force

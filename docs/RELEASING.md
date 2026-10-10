@@ -25,4 +25,8 @@ How consumers pick the release up:
 cd react-native && npm ci && npm publish   # prepublishOnly builds lib/; publishConfig is public
 ```
 
-pub.dev and Maven Central publishing is not wired yet.
+## pub.dev
+
+`volai_sdk` publishes from the `publish-pub` job through pub.dev automated publishing (GitHub Actions OIDC, no credential stored). The package's admin page on pub.dev lists this repository, the tag pattern `v{{version}}` and the GitHub environment `pub.dev`; the tag's version must equal `version:` in `flutter/volai_sdk/pubspec.yaml`. The package was first published by hand (`flutter pub publish` from a machine logged in with `dart pub login`) and transferred to the `globitel.com` verified publisher.
+
+Maven Central publishing is not wired yet.
