@@ -14,7 +14,7 @@ How consumers pick the release up:
 | iOS | Swift Package Manager resolves the tag: `.package(url: "https://github.com/Globitel/volai-sdk", from: "X.Y.Z")` |
 | Android | AAR attached to the release (`volai-android-sdk-vX.Y.Z.aar`); add it to `libs/` with the OkHttp and coroutines dependencies listed in `android/README.md` |
 | React Native | `npm install @volai/react-native-sdk` (published by the release workflow; the tarball is also attached to the release) |
-| Flutter | `volai_sdk: { git: { url: ..., ref: vX.Y.Z, path: flutter/volai_sdk } }` |
+| Flutter | `volai_sdk: ^X.Y.Z` from pub.dev (published by the release workflow) |
 | Web | `npm install @volai/web-sdk`, or the tarball on the release |
 
 ## npm

@@ -6,12 +6,10 @@ Flutter client for the Volai SDK contract (contract 1): chat over REST and serve
 
 ```yaml
 dependencies:
-  volai_sdk:
-    git:
-      url: https://github.com/Globitel/volai-sdk.git
-      ref: v0.1.1
-      path: flutter/volai_sdk
+  volai_sdk: ^0.1.2
 ```
+
+Or straight from the repository: `git: { url: https://github.com/Globitel/volai-sdk.git, ref: v0.1.2, path: flutter/volai_sdk }`.
 
 Add `NSMicrophoneUsageDescription` to the iOS `Info.plist`; the Android manifest permission is declared by the plugin, request `RECORD_AUDIO` at runtime (for example with `permission_handler`) before a call.
 

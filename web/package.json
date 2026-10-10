@@ -1,6 +1,6 @@
 {
   "name": "@volai/web-sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Reference browser client for the Volai SDK contract: sessions, chat over REST + SSE, and WebSocket PCM voice.",
   "license": "Apache-2.0",
   "repository": {
