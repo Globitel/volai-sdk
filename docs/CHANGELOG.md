@@ -16,3 +16,9 @@ Contract version is reported in `X-Volai-Contract` and in `GET /gicc/api/sdk/v1/
 | SDK package | Contract | Minimum server |
 |---|---|---|
 | `@volai/web-sdk` 0.1.x | 1 | v1.2.78 |
+
+## SDK releases
+
+| Tag | Date | Packages |
+|---|---|---|
+| v0.1.0 | 2026-10-10 | First release: iOS (Swift package), Android (Kotlin library), React Native, Flutter, web reference client, conformance tool. Contract 1. No live-agent video. |

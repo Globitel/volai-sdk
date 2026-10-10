@@ -1,0 +1,51 @@
+name: Release
+
+# Tagging vX.Y.Z publishes a GitHub Release with the built artefacts. Swift
+# Package Manager, React Native (git) and Flutter (git) consumers resolve the
+# tag directly; Android apps take the AAR from the release.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build artefacts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Web client
+        working-directory: web
+        run: |
+          npm ci && npm run build
+          tar -czf ../volai-web-sdk-${GITHUB_REF_NAME}.tgz -C dist .
+
+      - name: Android library
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon :volai-sdk:testDebugUnitTest :volai-sdk:assembleRelease
+          cp volai-sdk/build/outputs/aar/volai-sdk-release.aar ../volai-android-sdk-${GITHUB_REF_NAME}.aar
+
+      - name: React Native package
+        working-directory: react-native
+        run: |
+          npm ci && npm run build
+          npm pack --pack-destination ..
+          mv ../volai-react-native-sdk-*.tgz ../volai-react-native-sdk-${GITHUB_REF_NAME}.tgz
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            volai-web-sdk-${{ github.ref_name }}.tgz
+            volai-android-sdk-${{ github.ref_name }}.aar
+            volai-react-native-sdk-${{ github.ref_name }}.tgz
