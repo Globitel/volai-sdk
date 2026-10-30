@@ -1,9 +1,36 @@
 # @volai/web-sdk
 
-Reference browser client for the Volai SDK contract (contract 1). It is the
-same code the Volai website widget uses, published so native SDKs can mirror
-its behaviour. Contract: `docs/sdk/openapi.yaml` and
-`docs/sdk/voice-ws-protocol.md` in the Volai repository.
+Reference browser client for the Volai SDK contract (contract 1): sessions,
+chat over REST and server-sent events, and voice as plain PCM over one
+WebSocket. It is the same code the Volai website widget uses, published so
+native SDKs can mirror its behaviour. Contract: [`docs/openapi.yaml`](https://github.com/Globitel/volai-sdk/blob/main/docs/openapi.yaml)
+and [`docs/voice-ws-protocol.md`](https://github.com/Globitel/volai-sdk/blob/main/docs/voice-ws-protocol.md) in this repository.
+No WebRTC, no runtime dependencies.
+
+## Install
+
+```bash
+npm install @volai/web-sdk
+```
+
+The package is an ES module with TypeScript declarations, for bundlers (Vite,
+webpack, esbuild, Rollup) and for browsers that load modules directly. Without
+a bundler, import it from an ESM CDN:
+
+```html
+<script type="module">
+  import { VolaiClient } from 'https://cdn.jsdelivr.net/npm/@volai/web-sdk@0.1.3/+esm';
+</script>
+```
+
+Every [GitHub release](https://github.com/Globitel/volai-sdk/releases) also
+attaches `volai-web-sdk-<version>.tgz`, the built `dist/` folder, for
+self-hosting.
+
+Voice needs the microphone, so the page must be served over HTTPS (or from
+`localhost`).
+
+## Use
 
 ```ts
 import { VolaiClient } from '@volai/web-sdk';
@@ -29,5 +56,10 @@ A session grant from your backend (minted with the secret key) goes in
 `sessionGrant` on `createChat` / `createVoice` and makes the caller identity
 trusted.
 
-Build from the repository root: `npm run sdk:build` (ES module + type
-declarations in `sdk/web/dist`).
+## Build from source
+
+```bash
+cd web && npm ci && npm run build
+```
+
+Writes the ES module and type declarations to `web/dist`.
