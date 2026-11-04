@@ -12,7 +12,7 @@ public final class VolaiClient {
     public let sdkVersion: String
     public let session: URLSession
 
-    public static let sdkVersionString = "0.1.3"
+    public static let sdkVersionString = "0.2.0"
 
     /// Optional diagnostics sink (never logs credentials or audio).
     public static var debugLog: ((String) -> Void)?

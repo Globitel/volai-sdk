@@ -18,6 +18,7 @@ Contract version is reported in `X-Volai-Contract` and in `GET /gicc/api/sdk/v1/
 | SDK package | Contract | Minimum server |
 |---|---|---|
 | `@volai/web-sdk` 0.1.x | 1 | v1.2.78 |
+| all packages 0.2.x | 1 | v1.3.59 (chat attachments; earlier servers answer 404 on `uploadAttachment` / `sendAttachment`, everything else unchanged) |
 
 ## SDK releases
 
@@ -27,3 +28,4 @@ Contract version is reported in `X-Volai-Contract` and in `GET /gicc/api/sdk/v1/
 | v0.1.1 | 2026-10-10 | `@volai/react-native-sdk` and `@volai/web-sdk` published to npm by the release workflow (trusted publishing). No code changes. |
 | v0.1.2 | 2026-10-10 | npm only; the pub.dev job of this release did not complete. |
 | v0.1.3 | 2026-10-10 | `volai_sdk` published to pub.dev and `com.globitel.volai:volai-sdk` to Maven Central by the release workflow. No code changes. |
+| v0.2.0 | 2026-11-04 | `uploadAttachment` / `sendAttachment` and the `ChatAttachment` model on every chat session (web, iOS, Android, React Native, Flutter); conformance tool checks the attachment gate. Contract 1. |

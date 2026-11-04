@@ -38,7 +38,7 @@ class VolaiClient(
         .build()
 
     companion object {
-        const val SDK_VERSION = "0.1.3"
+        const val SDK_VERSION = "0.2.0"
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
         /** Optional diagnostics sink (never receives credentials or audio). */

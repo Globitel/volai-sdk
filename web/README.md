@@ -19,7 +19,7 @@ a bundler, import it from an ESM CDN:
 
 ```html
 <script type="module">
-  import { VolaiClient } from 'https://cdn.jsdelivr.net/npm/@volai/web-sdk@0.1.3/+esm';
+  import { VolaiClient } from 'https://cdn.jsdelivr.net/npm/@volai/web-sdk@0.2.0/+esm';
 </script>
 ```
 
