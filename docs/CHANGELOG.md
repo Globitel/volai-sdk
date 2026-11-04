@@ -29,3 +29,4 @@ Contract version is reported in `X-Volai-Contract` and in `GET /gicc/api/sdk/v1/
 | v0.1.2 | 2026-10-10 | npm only; the pub.dev job of this release did not complete. |
 | v0.1.3 | 2026-10-10 | `volai_sdk` published to pub.dev and `com.globitel.volai:volai-sdk` to Maven Central by the release workflow. No code changes. |
 | v0.2.0 | 2026-11-04 | `uploadAttachment` / `sendAttachment` and the `ChatAttachment` model on every chat session (web, iOS, Android, React Native, Flutter); conformance tool checks the attachment gate. Contract 1. |
+| v0.2.1 | 2026-11-04 | Same code as v0.2.0; re-tagged so pub.dev publishes (its dry run needs the Flutter package changelog to list the version). |
