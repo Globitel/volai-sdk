@@ -8,6 +8,8 @@ RCT_EXTERN_METHOD(getAgent:(NSString *)agentId resolve:(RCTPromiseResolveBlock)r
 RCT_EXTERN_METHOD(createChat:(NSDictionary *)request resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(startChat:(NSString *)sessionId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(sendChatMessage:(NSString *)sessionId content:(NSString *)content messageId:(NSString *)messageId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(uploadChatAttachment:(NSString *)sessionId path:(NSString *)path filename:(NSString *)filename mimeType:(NSString *)mimeType resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(sendChatAttachment:(NSString *)sessionId path:(NSString *)path filename:(NSString *)filename mimeType:(NSString *)mimeType content:(NSString *)content messageId:(NSString *)messageId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(ackChatMessage:(NSString *)sessionId messageId:(NSString *)messageId status:(NSString *)status resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(chatTyping:(NSString *)sessionId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(closeChat:(NSString *)sessionId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

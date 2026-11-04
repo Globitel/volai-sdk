@@ -42,6 +42,9 @@ const chat = await volai.createChat({ agentId: '<public agent id>', deviceId: 'i
 chat.onEvent((e) => { if (e.type === 'chat') console.log('agent:', e.content); });
 await chat.start();
 await chat.send('Hello');
+// Files, once a human agent has joined (LIVE_AGENT_CONNECTED): the AI does not read them
+chat.onEvent((e) => { if (e.type === 'human_chat' && e.attachment) console.log('file from agent:', chat.attachmentUrl(e.attachment)); });
+await chat.sendAttachment(fileInput.files[0]); // 409 attachments_unavailable before a transfer
 
 // Voice (WebSocket audio: no WebRTC)
 const { voice } = await volai.createVoice({ agentId: '<public agent id>', deviceId: 'install-123' });

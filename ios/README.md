@@ -24,6 +24,9 @@ let chat = try await volai.createChat(SessionRequest(agentId: "<public agent id>
 chat.start()
 Task { for await event in chat.events { if event.string("type") == "chat" { print(event.string("content") ?? "") } } }
 try await chat.send("Hello")
+// Files, once a human agent has joined (LIVE_AGENT_CONNECTED): the AI does not read them
+try await chat.sendAttachment(pdfData, filename: "invoice.pdf", mimeType: "application/pdf") // 409 attachments_unavailable before a transfer
+// A file from the agent arrives as a human_chat event: ChatAttachment(json: event.object("attachment")), chat.attachmentURL(_:)
 
 // Voice
 let call = try await volai.createVoice(SessionRequest(agentId: "<public agent id>", deviceId: installId))

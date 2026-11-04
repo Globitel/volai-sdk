@@ -8,6 +8,7 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.globitel.volai.ChatAttachment
 import com.globitel.volai.ChatSession
 import com.globitel.volai.SessionReady
 import com.globitel.volai.SessionRequest
@@ -120,6 +121,59 @@ class VolaiSdkModule(private val reactContext: ReactApplicationContext) : ReactC
     fun sendChatMessage(sessionId: String, content: String, messageId: String?, promise: Promise) {
         val chat = synchronized(chats) { chats[sessionId] } ?: return promise.reject("unknown_session", "No chat session $sessionId")
         scope.launch { try { promise.resolve(chat.send(content, messageId ?: UUID.randomUUID().toString())) } catch (e: Exception) { promise.fail(e) } }
+    }
+
+    // Attachments: the JS side hands over a file:// URI, a plain path or a content:// URI.
+    private fun readLocalFile(path: String): Pair<ByteArray, String> {
+        val uri = android.net.Uri.parse(path)
+        if (uri.scheme == "content") {
+            val resolver = reactContext.contentResolver
+            val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalArgumentException("Cannot open $path")
+            var name = "attachment"
+            resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) name = c.getString(0) ?: name
+            }
+            return bytes to name
+        }
+        val file = java.io.File(if (uri.scheme == "file") (uri.path ?: path) else path)
+        return file.readBytes() to file.name
+    }
+
+    private fun mimeTypeFor(filename: String, declared: String?): String {
+        if (!declared.isNullOrEmpty()) return declared
+        val ext = filename.substringAfterLast('.', "").lowercase()
+        return android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: ChatAttachment.guessMimeType(filename)
+    }
+
+    private fun attachmentMap(attachment: ChatAttachment, messageId: String? = null): WritableMap = Arguments.createMap().apply {
+        putMap("attachment", jsonToMap(attachment.toJson()))
+        if (attachment.downloadUrl != null) putString("downloadUrl", attachment.downloadUrl) else putNull("downloadUrl")
+        if (messageId != null) putString("messageId", messageId)
+    }
+
+    @ReactMethod
+    fun uploadChatAttachment(sessionId: String, path: String, filename: String?, mimeType: String?, promise: Promise) {
+        val chat = synchronized(chats) { chats[sessionId] } ?: return promise.reject("unknown_session", "No chat session $sessionId")
+        scope.launch {
+            try {
+                val (bytes, localName) = readLocalFile(path)
+                val name = filename ?: localName
+                promise.resolve(attachmentMap(chat.uploadAttachment(bytes, name, mimeTypeFor(name, mimeType))))
+            } catch (e: Exception) { promise.fail(e) }
+        }
+    }
+
+    @ReactMethod
+    fun sendChatAttachment(sessionId: String, path: String, filename: String?, mimeType: String?, content: String?, messageId: String?, promise: Promise) {
+        val chat = synchronized(chats) { chats[sessionId] } ?: return promise.reject("unknown_session", "No chat session $sessionId")
+        scope.launch {
+            try {
+                val (bytes, localName) = readLocalFile(path)
+                val name = filename ?: localName
+                val sent = chat.sendAttachment(bytes, name, mimeTypeFor(name, mimeType), content, messageId ?: UUID.randomUUID().toString())
+                promise.resolve(attachmentMap(sent.attachment, sent.messageId))
+            } catch (e: Exception) { promise.fail(e) }
+        }
     }
 
     @ReactMethod

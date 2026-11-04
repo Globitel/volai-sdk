@@ -192,3 +192,36 @@ func resumeURL(from wsURL: URL, sessionId: String, resumeToken: String) -> URL? 
     ]
     return components.url
 }
+
+/// A file attached to a chat message: the `attachment` object on `human_chat` /
+/// `chat` events, and what `VolaiChatSession.uploadAttachment` returns. `url` is
+/// portal-relative; use `downloadURL` or `VolaiChatSession.attachmentURL(_:)`
+/// for an absolute link.
+public struct ChatAttachment: Equatable {
+    public let url: String
+    public let filename: String
+    public let mimeType: String
+    public let size: Int
+    /// Absolute URL returned by the upload; nil for attachments read from events.
+    public let downloadURL: URL?
+
+    public init(url: String, filename: String, mimeType: String, size: Int, downloadURL: URL? = nil) {
+        self.url = url
+        self.filename = filename
+        self.mimeType = mimeType
+        self.size = size
+        self.downloadURL = downloadURL
+    }
+
+    /// Parses an event's `attachment` object (`event.object("attachment")`); nil when there is none.
+    public init?(json: JSONObject?) {
+        guard let json, let url = json.string("url"), !url.isEmpty else { return nil }
+        self.init(url: url,
+                  filename: json.string("filename") ?? "file",
+                  mimeType: json.string("mimetype") ?? "application/octet-stream",
+                  size: json.int("size") ?? 0)
+    }
+
+    /// The wire shape: the `attachment` field of a message body.
+    public var dictionary: [String: Any] { ["url": url, "filename": filename, "mimetype": mimeType, "size": size] }
+}

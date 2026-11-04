@@ -6,7 +6,10 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
@@ -57,21 +60,40 @@ class VolaiClient(
                 else -> builder.method(method, (body?.toString() ?: "{}").toRequestBody(JSON))
             }
             debug { "$method $path" }
-            http.newCall(builder.build()).execute().use { response ->
-                val text = response.body?.string() ?: ""
-                debug { "$method $path -> ${response.code} (${text.length} bytes)" }
-                val json = try { JSONObject(text) } catch (_: Exception) { JSONObject() }
-                if (!response.isSuccessful) {
-                    throw VolaiException.Api(
-                        response.code,
-                        json.optString("message").ifEmpty { response.message.ifEmpty { "HTTP ${response.code}" } },
-                        json.optString("code").ifEmpty { null },
-                        json.optString("reason").ifEmpty { null },
-                    )
-                }
-                json
-            }
+            http.newCall(builder.build()).execute().use { response -> decode(response, method, path) }
         }
+
+    /** Multipart upload (one `file` part) to `/gicc/api/sdk/v1{path}`; throws [VolaiException.Api] on non-2xx. */
+    suspend fun upload(path: String, key: String? = null, bytes: ByteArray, filename: String, mimeType: String): JSONObject =
+        withContext(Dispatchers.IO) {
+            val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+                .addFormDataPart("file", filename, bytes.toRequestBody(mimeType.toMediaTypeOrNull()))
+                .build()
+            val request = Request.Builder()
+                .url("$baseUrl/gicc/api/sdk/v1$path")
+                .header("Accept", "application/json")
+                .header("User-Agent", "$sdkName/$sdkVersion")
+                .header("Authorization", "Bearer ${key ?: appKey}")
+                .post(body)
+                .build()
+            debug { "POST $path (multipart, ${bytes.size} bytes)" }
+            http.newCall(request).execute().use { response -> decode(response, "POST", path) }
+        }
+
+    private fun decode(response: Response, method: String, path: String): JSONObject {
+        val text = response.body?.string() ?: ""
+        debug { "$method $path -> ${response.code} (${text.length} bytes)" }
+        val json = try { JSONObject(text) } catch (_: Exception) { JSONObject() }
+        if (!response.isSuccessful) {
+            throw VolaiException.Api(
+                response.code,
+                json.optString("message").ifEmpty { response.message.ifEmpty { "HTTP ${response.code}" } },
+                json.optString("code").ifEmpty { null },
+                json.optString("reason").ifEmpty { null },
+            )
+        }
+        return json
+    }
 
     suspend fun getAgent(agentId: String): PublicAgent = PublicAgent(request("/agents/$agentId"))
 

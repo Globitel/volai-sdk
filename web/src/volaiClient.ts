@@ -62,6 +62,22 @@ export interface ChatSessionInfo {
   expires_at: string | null;
 }
 
+/** A file attached to a chat message, as stored in the conversation history. `url` is portal-relative. */
+export interface ChatAttachment {
+  url: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+}
+
+export interface UploadedAttachment {
+  attachment: ChatAttachment;
+  /** Absolute URL of the file, for rendering from another origin. */
+  download_url: string;
+  /** Server cap on one file, in bytes. */
+  max_bytes: number;
+}
+
 export class VolaiApiError extends Error {
   status: number;
   code?: string;
@@ -154,13 +170,56 @@ export class VolaiChatSession {
     this.listeners.forEach((fn) => { try { fn(event); } catch (e) { console.error('[volai] chat listener error', e); } });
   }
 
-  async send(content: string, options: { messageId?: string; attachment?: unknown } = {}): Promise<Record<string, unknown>> {
+  async send(content: string, options: { messageId?: string; attachment?: ChatAttachment } = {}): Promise<Record<string, unknown>> {
     const messageId = options.messageId || crypto.randomUUID();
     return this.client.request(`/sessions/${this.info.session_id}/messages`, {
       method: 'POST', key: this.info.chat_token,
       body: { message_id: messageId, content, ...(options.attachment ? { attachment: options.attachment } : {}) },
       raw: true,
     }) as Promise<Record<string, unknown>>;
+  }
+
+  /**
+   * Upload a file for this conversation (multipart, field `file`). Files are
+   * accepted only while a human agent owns the chat: before a transfer the
+   * server answers 409 with `reason: attachments_unavailable` (the AI does
+   * not read files). Listen for `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED`
+   * to show or hide an attach control. One file, up to `max_bytes` (10 MB);
+   * images, audio, mp4/webm/ogg, PDF, Office documents, text and CSV.
+   */
+  async uploadAttachment(file: Blob, options: { filename?: string; signal?: AbortSignal } = {}): Promise<UploadedAttachment> {
+    const form = new FormData();
+    const filename = options.filename || (file as File).name || 'attachment';
+    form.append('file', file, filename);
+    const res = await this.client.fetch(`${this.client.options.baseUrl}/gicc/api/sdk/v1/sessions/${this.info.session_id}/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.info.chat_token}` },
+      body: form,
+      signal: options.signal,
+    });
+    const text = await res.text();
+    let json: Record<string, unknown> = {};
+    try { json = JSON.parse(text); } catch { json = {}; }
+    if (!res.ok) throw new VolaiApiError(res.status, json);
+    return json as unknown as UploadedAttachment;
+  }
+
+  /**
+   * Upload a file and send it as a message in one step. The caption defaults
+   * to `Sent a file: <name>`, which the agent desktop renders as a bare
+   * attachment. Resolves with the message id and the stored attachment.
+   */
+  async sendAttachment(file: Blob, options: { filename?: string; content?: string; messageId?: string; signal?: AbortSignal } = {}): Promise<{ messageId: string; attachment: ChatAttachment; download_url: string }> {
+    const uploaded = await this.uploadAttachment(file, { filename: options.filename, signal: options.signal });
+    const messageId = options.messageId || crypto.randomUUID();
+    const content = options.content || `Sent a file: ${uploaded.attachment.filename}`;
+    await this.send(content, { messageId, attachment: uploaded.attachment });
+    return { messageId, attachment: uploaded.attachment, download_url: uploaded.download_url };
+  }
+
+  /** Absolute URL for an attachment received on the event stream (`human_chat` / `chat` events carry `attachment`). */
+  attachmentUrl(attachment: ChatAttachment): string {
+    return /^https?:\/\//i.test(attachment.url) ? attachment.url : `${this.client.options.baseUrl}${attachment.url}`;
   }
 
   async acknowledge(messageId: string, status: 'delivered' | 'read'): Promise<void> {

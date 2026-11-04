@@ -26,6 +26,9 @@ val chat = volai.createChat(SessionRequest(agentId = "<public agent id>", device
 chat.start()
 scope.launch { chat.events.collect { if (it.optString("type") == "chat") println(it.optString("content")) } }
 chat.send("Hello")
+// Files, once a human agent has joined (LIVE_AGENT_CONNECTED): the AI does not read them
+chat.sendAttachment(File(cacheDir, "invoice.pdf")) // 409 attachments_unavailable before a transfer
+// A file from the agent arrives as a human_chat event: ChatAttachment.fromJson(event.optJSONObject("attachment")), chat.attachmentUrl(it)
 
 // Voice
 val call = volai.createVoice(SessionRequest(agentId = "<public agent id>", deviceId = installId))

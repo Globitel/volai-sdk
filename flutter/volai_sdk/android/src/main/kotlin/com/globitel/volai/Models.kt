@@ -101,3 +101,41 @@ internal fun resumeUrl(wsUrl: String, sessionId: String, resumeToken: String): S
     val base = wsUrl.substringBefore('?')
     return "$base?resume_session=${java.net.URLEncoder.encode(sessionId, "UTF-8")}&resume_token=${java.net.URLEncoder.encode(resumeToken, "UTF-8")}"
 }
+
+/**
+ * A file attached to a chat message: the `attachment` object on `human_chat` / `chat`
+ * events, and what [ChatSession.uploadAttachment] returns. [url] is portal-relative;
+ * use [downloadUrl] or [ChatSession.attachmentUrl] for an absolute link.
+ */
+data class ChatAttachment(
+    val url: String,
+    val filename: String,
+    val mimeType: String,
+    val size: Long,
+    /** Absolute URL returned by the upload; null for attachments read from events. */
+    val downloadUrl: String? = null,
+) {
+    /** The wire shape: the `attachment` field of a message body. */
+    fun toJson(): JSONObject = JSONObject().put("url", url).put("filename", filename).put("mimetype", mimeType).put("size", size)
+
+    companion object {
+        /** Parses an event's `attachment` object (`event.optJSONObject("attachment")`); null when there is none. */
+        fun fromJson(json: JSONObject?): ChatAttachment? {
+            val url = json?.str("url")?.takeIf { it.isNotEmpty() } ?: return null
+            return ChatAttachment(url, json.str("filename") ?: "file", json.str("mimetype") ?: "application/octet-stream", json.optLong("size", 0))
+        }
+
+        private val EXTENSION_TYPES = mapOf(
+            "jpg" to "image/jpeg", "jpeg" to "image/jpeg", "png" to "image/png", "gif" to "image/gif", "webp" to "image/webp",
+            "wav" to "audio/wav", "mp3" to "audio/mpeg", "m4a" to "audio/mp4", "mp4" to "video/mp4", "webm" to "video/webm", "ogg" to "audio/ogg",
+            "pdf" to "application/pdf", "doc" to "application/msword",
+            "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xls" to "application/vnd.ms-excel", "xlsx" to "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "txt" to "text/plain", "csv" to "text/csv",
+        )
+
+        /** MIME type from the file name for the types the server accepts; `application/octet-stream` otherwise. */
+        fun guessMimeType(filename: String): String =
+            EXTENSION_TYPES[filename.substringAfterLast('.', "").lowercase()] ?: "application/octet-stream"
+    }
+}

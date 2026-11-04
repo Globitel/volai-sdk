@@ -25,6 +25,8 @@ final chat = await volai.createChat(SessionRequest(agentId: '<public agent id>',
 chat.events.listen((e) { if (e['type'] == 'chat') print(e['content']); });
 await chat.start();
 await chat.send('Hello');
+// Files, once a human agent has joined (LIVE_AGENT_CONNECTED): the AI does not read them
+await chat.sendAttachment('/path/to/invoice.pdf'); // VolaiException status 409 / attachments_unavailable before a transfer
 
 // Voice
 final call = await volai.createVoice(SessionRequest(agentId: '<public agent id>', deviceId: installId));

@@ -23,6 +23,8 @@ const chat = await volai.createChat({ agentId: '<public agent id>', deviceId: in
 chat.onEvent((e) => { if (e.type === 'chat') console.log(e.content); });
 await chat.start();
 await chat.send('Hello');
+// Files, once a human agent has joined (LIVE_AGENT_CONNECTED): the AI does not read them
+await chat.sendAttachment({ path: 'file:///…/invoice.pdf' }); // rejects with api_409 / attachments_unavailable before a transfer
 
 // Voice
 const call = await volai.createVoice({ agentId: '<public agent id>', deviceId: installId });

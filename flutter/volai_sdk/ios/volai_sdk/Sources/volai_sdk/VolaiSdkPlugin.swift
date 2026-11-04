@@ -1,5 +1,6 @@
 import Flutter
 import Foundation
+import UniformTypeIdentifiers
 
 /// Flutter bridge over the VolaiSDK sources vendored in volai_sdk/Sources/volai_sdk/VolaiSDK
 /// (scripts/sync-native.sh). Methods on `com.globitel.volai/sdk`, events on
@@ -107,6 +108,27 @@ public final class VolaiSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
             guard let chat = requireChat(args, result), let content = args["content"] as? String else { return }
             let messageId = args["messageId"] as? String ?? UUID().uuidString
             Task { do { reply(result, try await chat.send(content, messageId: messageId)) } catch { fail(result, error) } }
+        case "uploadChatAttachment":
+            guard let chat = requireChat(args, result), let path = args["path"] as? String else { return }
+            Task {
+                do {
+                    let file = try Self.readLocalFile(path)
+                    let name = args["filename"] as? String ?? file.name
+                    let attachment = try await chat.uploadAttachment(file.data, filename: name, mimeType: Self.mimeType(for: name, declared: args["mimeType"] as? String))
+                    reply(result, Self.attachmentDict(attachment))
+                } catch { fail(result, error) }
+            }
+        case "sendChatAttachment":
+            guard let chat = requireChat(args, result), let path = args["path"] as? String else { return }
+            Task {
+                do {
+                    let file = try Self.readLocalFile(path)
+                    let name = args["filename"] as? String ?? file.name
+                    let sent = try await chat.sendAttachment(file.data, filename: name, mimeType: Self.mimeType(for: name, declared: args["mimeType"] as? String),
+                                                             content: args["content"] as? String, messageId: args["messageId"] as? String ?? UUID().uuidString)
+                    reply(result, Self.attachmentDict(sent.attachment, messageId: sent.messageId))
+                } catch { fail(result, error) }
+            }
         case "ackChatMessage":
             guard let chat = requireChat(args, result), let messageId = args["messageId"] as? String, let status = args["status"] as? String else { return }
             Task { do { try await chat.acknowledge(messageId: messageId, status: status); reply(result, nil) } catch { fail(result, error) } }
@@ -158,6 +180,28 @@ public final class VolaiSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
         default:
             result(FlutterMethodNotImplemented)
         }
+    }
+
+    // Attachments: Dart hands over a file path or file:// URI.
+    private static func readLocalFile(_ path: String) throws -> (data: Data, name: String) {
+        let url: URL
+        if path.hasPrefix("file://"), let parsed = URL(string: path) { url = parsed } else { url = URL(fileURLWithPath: path) }
+        return (try Data(contentsOf: url), url.lastPathComponent)
+    }
+
+    private static func mimeType(for filename: String, declared: String?) -> String {
+        if let declared, !declared.isEmpty { return declared }
+        if #available(iOS 14.0, macOS 11.0, *),
+           let type = UTType(filenameExtension: (filename as NSString).pathExtension), let mime = type.preferredMIMEType {
+            return mime
+        }
+        return "application/octet-stream"
+    }
+
+    private static func attachmentDict(_ attachment: ChatAttachment, messageId: String? = nil) -> [String: Any] {
+        var dict: [String: Any] = ["attachment": attachment.dictionary, "downloadUrl": attachment.downloadURL?.absoluteString ?? NSNull()]
+        if let messageId { dict["messageId"] = messageId }
+        return dict
     }
 
     private func requireClient(_ result: FlutterResult) -> VolaiClient? {

@@ -12,6 +12,8 @@ interface NativeVolaiSdk {
   createChat(request: Json): Promise<Json>;
   startChat(sessionId: string): Promise<void>;
   sendChatMessage(sessionId: string, content: string, messageId: string | null): Promise<string>;
+  uploadChatAttachment(sessionId: string, path: string, filename: string | null, mimeType: string | null): Promise<Json>;
+  sendChatAttachment(sessionId: string, path: string, filename: string | null, mimeType: string | null, content: string | null, messageId: string | null): Promise<Json>;
   ackChatMessage(sessionId: string, messageId: string, status: string): Promise<void>;
   chatTyping(sessionId: string): Promise<void>;
   closeChat(sessionId: string): Promise<void>;
@@ -58,6 +60,29 @@ export interface ChatSessionInfo {
   chatToken: string;
   eventsUrl: string;
   initialGreeting: { id: string; content: string } | null;
+}
+
+/** A file attached to a chat message (`attachment` on `human_chat` / `chat` events). `url` is portal-relative. */
+export interface ChatAttachment {
+  url: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+}
+
+export interface UploadedAttachment {
+  attachment: ChatAttachment;
+  /** Absolute URL of the uploaded file. */
+  downloadUrl: string | null;
+}
+
+/** A local file to send: a `file://` URI, a plain path, or (Android) a `content://` URI. */
+export interface AttachmentFile {
+  path: string;
+  /** Defaults to the file's own name. */
+  filename?: string;
+  /** Defaults to a guess from the file name. */
+  mimeType?: string;
 }
 
 export interface VoiceCallInfo {
@@ -120,6 +145,23 @@ export class VolaiChatSession {
 
   send(content: string, messageId?: string): Promise<string> {
     return native!.sendChatMessage(this.info.sessionId, content, messageId ?? null);
+  }
+
+  /**
+   * Upload a file for this conversation. Files are accepted only while a human
+   * agent owns the chat: before a transfer the call rejects with code
+   * `api_409` and reason `attachments_unavailable` (the AI does not read
+   * files). Watch `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` events to
+   * show or hide an attach control. One file of up to 10 MB: images, audio,
+   * mp4/webm/ogg, PDF, Office documents, text and CSV.
+   */
+  async uploadAttachment(file: AttachmentFile): Promise<UploadedAttachment> {
+    return (await native!.uploadChatAttachment(this.info.sessionId, file.path, file.filename ?? null, file.mimeType ?? null)) as unknown as UploadedAttachment;
+  }
+
+  /** Upload a file and send it as a message; `content` defaults to "Sent a file: <name>". */
+  async sendAttachment(file: AttachmentFile, options: { content?: string; messageId?: string } = {}): Promise<UploadedAttachment & { messageId: string }> {
+    return (await native!.sendChatAttachment(this.info.sessionId, file.path, file.filename ?? null, file.mimeType ?? null, options.content ?? null, options.messageId ?? null)) as unknown as UploadedAttachment & { messageId: string };
   }
 
   acknowledge(messageId: string, status: 'delivered' | 'read'): Promise<void> {

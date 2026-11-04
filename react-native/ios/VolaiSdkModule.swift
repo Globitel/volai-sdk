@@ -1,5 +1,6 @@
 import Foundation
 import React
+import UniformTypeIdentifiers
 
 /// React Native bridge over the VolaiSDK sources vendored in ios/VolaiSDK
 /// (scripts/sync-native.sh). Promise-based methods; events on
@@ -101,6 +102,53 @@ final class VolaiSdkModule: RCTEventEmitter {
         guard let chat = chats[sessionId] else { reject("unknown_session", "No chat session \(sessionId)", nil); return }
         Task {
             do { resolve(try await chat.send(content, messageId: messageId ?? UUID().uuidString)) } catch { fail(reject, error) }
+        }
+    }
+
+    // Attachments: the JS side hands over a file:// URI or a plain path.
+    private static func readLocalFile(_ path: String) throws -> (data: Data, name: String) {
+        let url: URL
+        if path.hasPrefix("file://"), let parsed = URL(string: path) { url = parsed } else { url = URL(fileURLWithPath: path) }
+        return (try Data(contentsOf: url), url.lastPathComponent)
+    }
+
+    private static func mimeType(for filename: String, declared: String?) -> String {
+        if let declared, !declared.isEmpty { return declared }
+        if #available(iOS 14.0, macOS 11.0, *),
+           let type = UTType(filenameExtension: (filename as NSString).pathExtension), let mime = type.preferredMIMEType {
+            return mime
+        }
+        return "application/octet-stream"
+    }
+
+    private static func attachmentDict(_ attachment: ChatAttachment, messageId: String? = nil) -> [String: Any] {
+        var dict: [String: Any] = ["attachment": attachment.dictionary, "downloadUrl": attachment.downloadURL?.absoluteString ?? NSNull()]
+        if let messageId { dict["messageId"] = messageId }
+        return dict
+    }
+
+    @objc func uploadChatAttachment(_ sessionId: String, path: String, filename: String?, mimeType: String?, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+        guard let chat = chats[sessionId] else { reject("unknown_session", "No chat session \(sessionId)", nil); return }
+        Task {
+            do {
+                let file = try Self.readLocalFile(path)
+                let name = filename ?? file.name
+                let attachment = try await chat.uploadAttachment(file.data, filename: name, mimeType: Self.mimeType(for: name, declared: mimeType))
+                resolve(Self.attachmentDict(attachment))
+            } catch { fail(reject, error) }
+        }
+    }
+
+    @objc func sendChatAttachment(_ sessionId: String, path: String, filename: String?, mimeType: String?, content: String?, messageId: String?, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+        guard let chat = chats[sessionId] else { reject("unknown_session", "No chat session \(sessionId)", nil); return }
+        Task {
+            do {
+                let file = try Self.readLocalFile(path)
+                let name = filename ?? file.name
+                let sent = try await chat.sendAttachment(file.data, filename: name, mimeType: Self.mimeType(for: name, declared: mimeType),
+                                                         content: content, messageId: messageId ?? UUID().uuidString)
+                resolve(Self.attachmentDict(sent.attachment, messageId: sent.messageId))
+            } catch { fail(reject, error) }
         }
     }
 

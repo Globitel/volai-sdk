@@ -96,6 +96,46 @@ public final class VolaiChatSession {
         return messageId
     }
 
+    /// Sends a text message carrying an already uploaded attachment.
+    @discardableResult
+    public func send(_ content: String, messageId: String = UUID().uuidString, attachment: ChatAttachment) async throws -> String {
+        try await send(content, messageId: messageId, attachment: attachment.dictionary)
+    }
+
+    /// Uploads a file for this conversation (`POST /sessions/{id}/attachments`).
+    ///
+    /// Files are accepted only while a human agent owns the chat: before a transfer the
+    /// server answers 409 with `reason: attachments_unavailable` (the AI does not read
+    /// files). Watch `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` on `events` to show
+    /// or hide an attach control. One file of up to 10 MB: images, audio, mp4/webm/ogg,
+    /// PDF, Office documents, text and CSV.
+    public func uploadAttachment(_ data: Data, filename: String, mimeType: String) async throws -> ChatAttachment {
+        let json = try await client.upload("/sessions/\(info.sessionId)/attachments", key: info.chatToken,
+                                           fileData: data, filename: filename, mimeType: mimeType)
+        guard let stored = ChatAttachment(json: json.object("attachment")) else {
+            throw VolaiError.invalidResponse("attachment upload returned no attachment")
+        }
+        let download = json.string("download_url").flatMap(URL.init(string:))
+        return ChatAttachment(url: stored.url, filename: stored.filename, mimeType: stored.mimeType, size: stored.size, downloadURL: download)
+    }
+
+    /// Uploads a file and sends it as a message in one step. `content` defaults to
+    /// "Sent a file: <name>", which the agent desktop renders as a bare attachment.
+    @discardableResult
+    public func sendAttachment(_ data: Data, filename: String, mimeType: String, content: String? = nil,
+                               messageId: String = UUID().uuidString) async throws -> (messageId: String, attachment: ChatAttachment) {
+        let attachment = try await uploadAttachment(data, filename: filename, mimeType: mimeType)
+        try await send(content ?? "Sent a file: \(attachment.filename)", messageId: messageId, attachment: attachment)
+        return (messageId, attachment)
+    }
+
+    /// Absolute URL of an attachment, including one received on the event stream.
+    public func attachmentURL(_ attachment: ChatAttachment) -> URL? {
+        if let download = attachment.downloadURL { return download }
+        if attachment.url.hasPrefix("http://") || attachment.url.hasPrefix("https://") { return URL(string: attachment.url) }
+        return URL(string: client.baseURL.absoluteString + attachment.url)
+    }
+
     public func acknowledge(messageId: String, status: String) async throws {
         try await client.request("/sessions/\(info.sessionId)/acks", method: "POST", key: info.chatToken,
                                  body: ["message_id": messageId, "status": status])

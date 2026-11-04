@@ -13,6 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.Request
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 
 /**
@@ -85,6 +86,58 @@ class ChatSession internal constructor(private val client: VolaiClient, val info
         attachment?.let { body.put("attachment", it) }
         client.request("/sessions/${info.sessionId}/messages", "POST", key = info.chatToken, body = body)
         return messageId
+    }
+
+    /** Sends a text message carrying an already uploaded attachment. */
+    suspend fun send(content: String, messageId: String = UUID.randomUUID().toString(), attachment: ChatAttachment): String =
+        send(content, messageId, attachment.toJson())
+
+    /**
+     * Uploads a file for this conversation (`POST /sessions/{id}/attachments`).
+     *
+     * Files are accepted only while a human agent owns the chat: before a transfer the
+     * server answers 409 with `reason = attachments_unavailable` (the AI does not read
+     * files). Watch `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` on [events] to show
+     * or hide an attach control. One file of up to 10 MB: images, audio, mp4/webm/ogg,
+     * PDF, Office documents, text and CSV.
+     */
+    suspend fun uploadAttachment(bytes: ByteArray, filename: String, mimeType: String = ChatAttachment.guessMimeType(filename)): ChatAttachment {
+        val json = client.upload("/sessions/${info.sessionId}/attachments", key = info.chatToken, bytes = bytes, filename = filename, mimeType = mimeType)
+        val stored = ChatAttachment.fromJson(json.optJSONObject("attachment"))
+            ?: throw VolaiException.InvalidResponse("attachment upload returned no attachment")
+        return stored.copy(downloadUrl = json.optString("download_url").ifEmpty { null })
+    }
+
+    suspend fun uploadAttachment(file: File, mimeType: String = ChatAttachment.guessMimeType(file.name)): ChatAttachment =
+        uploadAttachment(file.readBytes(), file.name, mimeType)
+
+    /** Result of [sendAttachment]. */
+    data class SentAttachment(val messageId: String, val attachment: ChatAttachment)
+
+    /**
+     * Uploads a file and sends it as a message in one step. [content] defaults to
+     * "Sent a file: <name>", which the agent desktop renders as a bare attachment.
+     */
+    suspend fun sendAttachment(
+        bytes: ByteArray,
+        filename: String,
+        mimeType: String = ChatAttachment.guessMimeType(filename),
+        content: String? = null,
+        messageId: String = UUID.randomUUID().toString(),
+    ): SentAttachment {
+        val attachment = uploadAttachment(bytes, filename, mimeType)
+        send(content ?: "Sent a file: ${attachment.filename}", messageId, attachment)
+        return SentAttachment(messageId, attachment)
+    }
+
+    suspend fun sendAttachment(file: File, mimeType: String = ChatAttachment.guessMimeType(file.name), content: String? = null): SentAttachment =
+        sendAttachment(file.readBytes(), file.name, mimeType, content)
+
+    /** Absolute URL of an attachment, including one received on the event stream. */
+    fun attachmentUrl(attachment: ChatAttachment): String = when {
+        attachment.downloadUrl != null -> attachment.downloadUrl
+        attachment.url.startsWith("http://") || attachment.url.startsWith("https://") -> attachment.url
+        else -> client.baseUrl + attachment.url
     }
 
     suspend fun acknowledge(messageId: String, status: String) {

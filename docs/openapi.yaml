@@ -166,11 +166,56 @@ paths:
               properties:
                 message_id: { type: string, format: uuid }
                 content: { type: string }
-                attachment: { type: object, nullable: true }
+                attachment:
+                  allOf: [{ $ref: "#/components/schemas/ChatAttachment" }]
+                  nullable: true
+                  description: The `attachment` object returned by the attachments endpoint, unchanged. Only meaningful while a human agent owns the chat; the AI does not read files.
       responses:
         "200": { description: Accepted; the reply arrives on the events stream (NDJSON may also be streamed in this response) }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: Session message cap or tenant monthly chat quota reached }
+  /sessions/{sessionId}/attachments:
+    post:
+      tags: [Chat]
+      summary: Upload a file to send in this chat
+      description: |
+        `multipart/form-data` with one `file` part. Files are accepted only while a
+        human agent owns the conversation (after `LIVE_AGENT_CONNECTED`, until
+        `LIVE_AGENT_DISCONNECTED`); before that the upload is refused with 409 and
+        `reason: attachments_unavailable`, because the AI does not read files. Send the
+        returned `attachment` object unchanged in the next `messages` call, with a
+        caption such as `Sent a file: <name>`. Files the human agent sends arrive as
+        `human_chat` (or `chat`) events carrying the same `attachment` object; its `url`
+        is relative to the Volai origin. One file of up to 10 MB: JPEG, PNG, GIF, WebP,
+        WAV, MP3, M4A, MP4, WebM, OGG, PDF, DOC/DOCX, XLS/XLSX, TXT, CSV. 20 uploads
+        per session per minute.
+      security: [{ chatToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/sessionId" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachment: { $ref: "#/components/schemas/ChatAttachment" }
+                  download_url: { type: string, description: Absolute URL of the file }
+                  max_bytes: { type: integer, description: Server cap on one file }
+        "400": { description: No file, or a file type outside the allowlist }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: "No human agent on the conversation (`reason: attachments_unavailable`)" }
+        "413": { description: File larger than `max_bytes` }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /sessions/{sessionId}/acks:
     post:
       tags: [Chat]
@@ -205,7 +250,8 @@ paths:
         cannot set headers) and `cursor` to resume after a disconnect. Event types:
         `ack`, `chunk`, `chat`, `chat_complete`, `human_chat`, `typing`, `system`,
         `LIVE_AGENT_CONNECTED`, `LIVE_AGENT_DISCONNECTED`, `handoff`, `context_update`,
-        `SESSION_ENDED`, `error`.
+        `SESSION_ENDED`, `error`. A `human_chat` or `chat` event may carry an
+        `attachment` object (see `ChatAttachment`) when the human agent sent a file.
       security: [{ chatTokenQuery: [] }]
       parameters:
         - $ref: "#/components/parameters/sessionId"
@@ -250,7 +296,7 @@ paths:
               type: object
               properties:
                 external_user_id: { type: string, maxLength: 128 }
-                caller_phone: { type: string, description: "International format", example: "+962791234567" }
+                caller_phone: { type: string, description: "Kept as sent, minus spaces and punctuation: 7 to 15 digits with an optional + or 00 prefix (00 becomes +). National numbers are not given a country code.", example: "+962791234567" }
                 caller_name: { type: string, maxLength: 120 }
                 caller_email: { type: string, format: email }
                 agent_id: { type: string, description: "Optional. Restrict the grant to one public agent id." }
@@ -307,6 +353,15 @@ components:
     RateLimited:
       description: Too many requests; honour `Retry-After`
   schemas:
+    ChatAttachment:
+      type: object
+      description: A file attached to a chat message, as stored in the conversation. `url` is relative to the Volai origin.
+      required: [url, filename, mimetype, size]
+      properties:
+        url: { type: string, example: /gicc/uploads/chat/chat-1762271234567-123456789.pdf }
+        filename: { type: string }
+        mimetype: { type: string }
+        size: { type: integer }
     Error:
       type: object
       properties:
@@ -348,7 +403,7 @@ components:
         transport: { type: string, enum: [ws_audio, webrtc], description: "Voice only. Omit to let the server pick (ws_audio for SDK sessions)." }
         device_id: { type: string, maxLength: 120, description: "Stable per-install id; used for quota keying when no grant is present" }
         caller_name: { type: string }
-        caller_phone: { type: string, description: "International format; ignored when a grant is present" }
+        caller_phone: { type: string, description: "Kept as sent, minus spaces and punctuation: 7 to 15 digits with an optional + or 00 prefix (00 becomes +). National numbers are not given a country code. Ignored when a grant is present." }
         caller_email: { type: string }
         context:
           type: object

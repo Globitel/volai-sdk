@@ -3,6 +3,7 @@ package com.globitel.volai.flutter
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.globitel.volai.ChatAttachment
 import com.globitel.volai.ChatSession
 import com.globitel.volai.SessionReady
 import com.globitel.volai.SessionRequest
@@ -132,6 +133,32 @@ class VolaiSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
                 val messageId = call.argument<String>("messageId") ?: UUID.randomUUID().toString()
                 scope.launch { try { result.ok(chat.send(content, messageId)) } catch (e: Exception) { result.fail(e) } }
             }
+            "uploadChatAttachment" -> {
+                val chat = requireChat(call, result) ?: return
+                val path = call.argument<String>("path") ?: return result.error("bad_args", "path is required", null)
+                val filename = call.argument<String>("filename"); val mimeType = call.argument<String>("mimeType")
+                scope.launch {
+                    try {
+                        val (bytes, localName) = readLocalFile(path)
+                        val name = filename ?: localName
+                        result.ok(attachmentMap(chat.uploadAttachment(bytes, name, mimeTypeFor(name, mimeType))))
+                    } catch (e: Exception) { result.fail(e) }
+                }
+            }
+            "sendChatAttachment" -> {
+                val chat = requireChat(call, result) ?: return
+                val path = call.argument<String>("path") ?: return result.error("bad_args", "path is required", null)
+                val filename = call.argument<String>("filename"); val mimeType = call.argument<String>("mimeType")
+                val content = call.argument<String>("content"); val messageId = call.argument<String>("messageId") ?: UUID.randomUUID().toString()
+                scope.launch {
+                    try {
+                        val (bytes, localName) = readLocalFile(path)
+                        val name = filename ?: localName
+                        val sent = chat.sendAttachment(bytes, name, mimeTypeFor(name, mimeType), content, messageId)
+                        result.ok(attachmentMap(sent.attachment, sent.messageId))
+                    } catch (e: Exception) { result.fail(e) }
+                }
+            }
             "ackChatMessage" -> {
                 val chat = requireChat(call, result) ?: return
                 val messageId = call.argument<String>("messageId") ?: ""; val status = call.argument<String>("status") ?: "read"
@@ -187,6 +214,34 @@ class VolaiSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
 
     private fun requireClient(result: MethodChannel.Result): VolaiClient? =
         client ?: run { result.error("not_configured", "Create a VolaiClient first", null); null }
+
+    // Attachments: Dart hands over a file path, a file:// URI or a content:// URI.
+    private fun readLocalFile(path: String): Pair<ByteArray, String> {
+        val uri = android.net.Uri.parse(path)
+        if (uri.scheme == "content") {
+            val resolver = appContext.contentResolver
+            val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalArgumentException("Cannot open $path")
+            var name = "attachment"
+            resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) name = c.getString(0) ?: name
+            }
+            return bytes to name
+        }
+        val file = java.io.File(if (uri.scheme == "file") (uri.path ?: path) else path)
+        return file.readBytes() to file.name
+    }
+
+    private fun mimeTypeFor(filename: String, declared: String?): String {
+        if (!declared.isNullOrEmpty()) return declared
+        val ext = filename.substringAfterLast('.', "").lowercase()
+        return android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: ChatAttachment.guessMimeType(filename)
+    }
+
+    private fun attachmentMap(attachment: ChatAttachment, messageId: String? = null): Map<String, Any?> = buildMap {
+        put("attachment", jsonToMap(attachment.toJson()))
+        put("downloadUrl", attachment.downloadUrl)
+        if (messageId != null) put("messageId", messageId)
+    }
 
     private fun requireChat(call: MethodCall, result: MethodChannel.Result): ChatSession? {
         val sessionId = call.argument<String>("sessionId")

@@ -46,6 +46,28 @@ public final class VolaiClient {
         }
         VolaiClient.debug("\(method) \(path)")
         let (data, response) = try await session.data(for: req)
+        return try Self.decode(data, response, method: method, path: path)
+    }
+
+    /// Multipart upload (one `file` part) to `/gicc/api/sdk/v1{path}`; throws `VolaiError.api` on non-2xx.
+    @discardableResult
+    public func upload(_ path: String, key: String? = nil, fileData: Data, filename: String, mimeType: String) async throws -> JSONObject {
+        var url = baseURL
+        url.appendPathComponent("gicc/api/sdk/v1" + path)
+        let boundary = "VolaiBoundary-\(UUID().uuidString)"
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("\(sdkName)/\(sdkVersion)", forHTTPHeaderField: "User-Agent")
+        req.setValue("Bearer \(key ?? appKey)", forHTTPHeaderField: "Authorization")
+        req.httpBody = Self.multipartBody(boundary: boundary, field: "file", filename: filename, mimeType: mimeType, data: fileData)
+        VolaiClient.debug("POST \(path) (multipart, \(fileData.count) bytes)")
+        let (data, response) = try await session.data(for: req)
+        return try Self.decode(data, response, method: "POST", path: path)
+    }
+
+    private static func decode(_ data: Data, _ response: URLResponse, method: String, path: String) throws -> JSONObject {
         guard let http = response as? HTTPURLResponse else { throw VolaiError.transport("no HTTP response") }
         VolaiClient.debug("\(method) \(path) -> \(http.statusCode) (\(data.count) bytes)")
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
@@ -56,6 +78,21 @@ public final class VolaiClient {
                                  reason: json["reason"] as? String)
         }
         return JSONObject(json)
+    }
+
+    /// One-part multipart/form-data body (the filename travels as UTF-8, which the server expects).
+    static func multipartBody(boundary: String, field: String, filename: String, mimeType: String, data: Data) -> Data {
+        let safeName = filename
+            .replacingOccurrences(of: "\"", with: "_")
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"\(field)\"; filename=\"\(safeName)\"\r\n".utf8))
+        body.append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
+        body.append(data)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        return body
     }
 
     // MARK: - Discovery and verification

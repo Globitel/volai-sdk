@@ -123,3 +123,30 @@ final class ModelTests: XCTestCase {
         XCTAssertThrowsError(try VoiceSessionInfo(json: JSONObject(["session_id": "s"])))
     }
 }
+
+// MARK: - Chat attachments
+
+final class AttachmentTests: XCTestCase {
+    func testMultipartBodyHasOneFilePartWithUTF8Filename() {
+        let body = VolaiClient.multipartBody(boundary: "B", field: "file", filename: "فاتورة.pdf", mimeType: "application/pdf", data: Data([0x25, 0x50]))
+        let text = String(decoding: body, as: UTF8.self)
+        XCTAssertTrue(text.hasPrefix("--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"فاتورة.pdf\"\r\nContent-Type: application/pdf\r\n\r\n"))
+        XCTAssertTrue(text.hasSuffix("\r\n--B--\r\n"))
+        XCTAssertEqual(body.count, text.utf8.count)
+    }
+
+    func testMultipartBodyStripsQuotesAndLineBreaksFromFilename() {
+        let body = VolaiClient.multipartBody(boundary: "B", field: "file", filename: "a\"b\r\nc.txt", mimeType: "text/plain", data: Data())
+        XCTAssertTrue(String(decoding: body, as: UTF8.self).contains("filename=\"a_bc.txt\""))
+    }
+
+    func testChatAttachmentParsesEventShapeAndRoundTrips() {
+        let event = JSONObject(["type": "human_chat", "attachment": ["url": "/gicc/uploads/chat/x.png", "filename": "x.png", "mimetype": "image/png", "size": 1234]])
+        let a = ChatAttachment(json: event.object("attachment"))
+        XCTAssertEqual(a?.url, "/gicc/uploads/chat/x.png")
+        XCTAssertEqual(a?.mimeType, "image/png")
+        XCTAssertEqual(a?.size, 1234)
+        XCTAssertEqual(a?.dictionary["mimetype"] as? String, "image/png")
+        XCTAssertNil(ChatAttachment(json: JSONObject(["type": "chat"]).object("attachment")))
+    }
+}

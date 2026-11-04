@@ -10,6 +10,8 @@ Contract version is reported in `X-Volai-Contract` and in `GET /gicc/api/sdk/v1/
 | v1.2.77 | 2026-10-09 | Tenant setting for the browser default transport usable by platform administrators (no contract change) |
 | v1.2.78 | 2026-10-09 | `ws_audio` for pipeline-architecture agents; every voice agent now advertises both transports |
 | v1.2.79 | 2026-10-09 | Web-only hybrid for live-agent video (video-only WebRTC leg at `/gicc/ws/sdk/video`); native SDKs carry no video in contract 1 |
+| next | 2026-10-30 | `caller_phone` on sessions and session grants is kept as sent (formatting stripped, `00` folded to `+`) instead of being rewritten to E.164; a national number such as `575104158` no longer becomes `+575104158`. Values that are not 7 to 15 digits with an optional `+`/`00` prefix are rejected with 400 (no contract change) |
+| next | 2026-11-04 | `POST /sessions/{sessionId}/attachments` (multipart `file`, chat token): customer-side file upload, accepted only while a human agent owns the chat (409 `attachments_unavailable` before a transfer), 10 MB cap, same type allowlist as the agent desktop; the returned `attachment` goes unchanged into `messages`; `human_chat` / `chat` events carry `attachment` when the agent sends a file. SDKs: `uploadAttachment` / `sendAttachment` on every chat session (additive, contract stays 1) |
 
 ## Compatibility
 

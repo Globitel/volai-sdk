@@ -126,6 +126,45 @@ class ChatSessionInfo {
   final Map<String, dynamic>? initialGreeting;
 }
 
+/// A file attached to a chat message: the `attachment` map on `human_chat` /
+/// `chat` events, and what [VolaiChatSession.uploadAttachment] returns.
+/// [url] is portal-relative; [downloadUrl] is absolute when known.
+class ChatAttachment {
+  ChatAttachment({required this.url, required this.filename, required this.mimeType, required this.size, this.downloadUrl});
+
+  /// Parses an event's `attachment` map; null when the event carries none.
+  static ChatAttachment? fromEvent(Map<String, dynamic> event) {
+    final raw = event['attachment'];
+    if (raw is! Map) return null;
+    final m = _toMap(raw);
+    final url = m['url'] as String? ?? '';
+    if (url.isEmpty) return null;
+    return ChatAttachment(
+      url: url,
+      filename: m['filename'] as String? ?? 'file',
+      mimeType: m['mimetype'] as String? ?? 'application/octet-stream',
+      size: (m['size'] as num?)?.toInt() ?? 0,
+      downloadUrl: m['downloadUrl'] as String?,
+    );
+  }
+
+  final String url;
+  final String filename;
+  final String mimeType;
+  final int size;
+  final String? downloadUrl;
+
+  /// The wire shape: the `attachment` field of a message body.
+  Map<String, Object?> toMap() => {'url': url, 'filename': filename, 'mimetype': mimeType, 'size': size};
+}
+
+/// Result of [VolaiChatSession.sendAttachment].
+class SentAttachment {
+  SentAttachment(this.messageId, this.attachment);
+  final String messageId;
+  final ChatAttachment attachment;
+}
+
 class VoiceCallInfo {
   VoiceCallInfo(Map<String, dynamic> m)
       : callId = m['callId'] as String,
@@ -207,6 +246,44 @@ class VolaiChatSession {
   /// Sends a message; returns its id.
   Future<String> send(String content, {String? messageId}) =>
       _call<String>('sendChatMessage', {'sessionId': info.sessionId, 'content': content, 'messageId': messageId});
+
+  /// Uploads a local file for this conversation.
+  ///
+  /// Files are accepted only while a human agent owns the chat: before a
+  /// transfer the call throws a [VolaiException] with `status` 409 and
+  /// `reason` `attachments_unavailable` (the AI does not read files). Watch
+  /// `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` on [events] to show or
+  /// hide an attach control. One file of up to 10 MB: images, audio,
+  /// mp4/webm/ogg, PDF, Office documents, text and CSV. [path] is a file path
+  /// or `file://` URI (Android also accepts a `content://` URI); [filename]
+  /// defaults to the file's own name and [mimeType] to a guess from it.
+  Future<ChatAttachment> uploadAttachment(String path, {String? filename, String? mimeType}) async {
+    final raw = await _call<Map<Object?, Object?>>('uploadChatAttachment', {
+      'sessionId': info.sessionId, 'path': path, 'filename': filename, 'mimeType': mimeType,
+    });
+    return _attachmentFrom(_toMap(raw));
+  }
+
+  /// Uploads a file and sends it as a message; [content] defaults to
+  /// "Sent a file: <name>".
+  Future<SentAttachment> sendAttachment(String path, {String? filename, String? mimeType, String? content, String? messageId}) async {
+    final raw = _toMap(await _call<Map<Object?, Object?>>('sendChatAttachment', {
+      'sessionId': info.sessionId, 'path': path, 'filename': filename, 'mimeType': mimeType,
+      'content': content, 'messageId': messageId,
+    }));
+    return SentAttachment(raw['messageId'] as String, _attachmentFrom(raw));
+  }
+
+  static ChatAttachment _attachmentFrom(Map<String, dynamic> raw) {
+    final a = _toMap(raw['attachment']);
+    return ChatAttachment(
+      url: a['url'] as String? ?? '',
+      filename: a['filename'] as String? ?? 'file',
+      mimeType: a['mimetype'] as String? ?? 'application/octet-stream',
+      size: (a['size'] as num?)?.toInt() ?? 0,
+      downloadUrl: raw['downloadUrl'] as String?,
+    );
+  }
 
   Future<void> acknowledge(String messageId, String status) =>
       _call<void>('ackChatMessage', {'sessionId': info.sessionId, 'messageId': messageId, 'status': status});
