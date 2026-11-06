@@ -20,7 +20,7 @@ const volai = new VolaiClient({ baseUrl: 'https://gicc.globitel.com', appKey: '<
 
 // Chat
 const chat = await volai.createChat({ agentId: '<public agent id>', deviceId: installId });
-chat.onEvent((e) => { if (['chat', 'human_chat', 'system'].includes(e.type)) console.log(e.content); });
+chat.onEvent((e) => { if (['chat', 'human_chat', 'system'].includes(String(e.type))) console.log(e.content); });
 await chat.start();
 await chat.send('Hello');
 // Files, once a human agent has joined (LIVE_AGENT_CONNECTED): the AI does not read them
