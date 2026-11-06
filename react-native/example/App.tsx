@@ -30,7 +30,14 @@ export default function App() {
   const startChat = async () => {
     try {
       chat.current = await client.current!.createChat({ agentId: CONFIG.agentId, deviceId: 'rn-example' });
-      chat.current.onEvent((e) => { if (e.type === 'chat' || e.type === 'chunk') append(`agent: ${String(e.content ?? '')}`); });
+      chat.current.onEvent((e) => {
+        // After a hand-off a live agent's messages arrive as human_chat, and
+        // queue or hand-off status as system. Show them or the chat goes silent.
+        const content = String(e.content ?? '');
+        if (e.type === 'chat' || e.type === 'chunk') append(`agent: ${content}`);
+        if (e.type === 'human_chat') append(`live agent: ${content}`);
+        if (e.type === 'system') append(`system: ${content}`);
+      });
       await chat.current.start();
       append('chat started');
     } catch (e) { append(`chat: ${(e as Error).message}`); }

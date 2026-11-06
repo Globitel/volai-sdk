@@ -52,7 +52,12 @@ class _VolaiExamplePageState extends State<VolaiExamplePage> {
     try {
       final chat = await _client!.createChat(SessionRequest(agentId: agentId, deviceId: 'flutter-example-${Platform.operatingSystem}'));
       chat.events.listen((e) {
-        if (e['type'] == 'chat' || e['type'] == 'chunk') _append('agent: ${e['content'] ?? ''}');
+        // After a hand-off a live agent's messages arrive as human_chat, and
+        // queue or hand-off status as system. Show them or the chat goes silent.
+        final content = e['content'] ?? '';
+        if (e['type'] == 'chat' || e['type'] == 'chunk') _append('agent: $content');
+        if (e['type'] == 'human_chat') _append('live agent: $content');
+        if (e['type'] == 'system') _append('system: $content');
       });
       await chat.start();
       _chat = chat;
