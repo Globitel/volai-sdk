@@ -24,7 +24,7 @@ val volai = VolaiClient(baseUrl = "https://gicc.globitel.com", appKey = "<publis
 // Chat
 val chat = volai.createChat(SessionRequest(agentId = "<public agent id>", deviceId = installId))
 chat.start()
-scope.launch { chat.events.collect { if (it.optString("type") == "chat") println(it.optString("content")) } }
+scope.launch { chat.events.collect { if (it.optString("type") in setOf("chat", "human_chat", "system")) println(it.optString("content")) } }
 chat.send("Hello")
 // Files, once a human agent has joined (LIVE_AGENT_CONNECTED): the AI does not read them
 chat.sendAttachment(File(cacheDir, "invoice.pdf")) // 409 attachments_unavailable before a transfer
@@ -37,6 +37,8 @@ call.connect(context)      // greeting starts; microphone frames flow once grant
 call.setMuted(true)
 call.end()
 ```
+
+A live agent's messages arrive as `human_chat`, and queue or hand-off status as `system`. An app that shows only `chat` goes silent after a hand-off.
 
 A session grant from your backend (minted with the secret key) goes in `SessionRequest.sessionGrant` and makes the caller identity trusted.
 

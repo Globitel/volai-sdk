@@ -39,7 +39,7 @@ const volai = new VolaiClient({ baseUrl: 'https://gicc.globitel.com', appKey: '<
 
 // Chat
 const chat = await volai.createChat({ agentId: '<public agent id>', deviceId: 'install-123' });
-chat.onEvent((e) => { if (e.type === 'chat') console.log('agent:', e.content); });
+chat.onEvent((e) => { if (['chat', 'human_chat', 'system'].includes(e.type)) console.log('agent:', e.content); });
 await chat.start();
 await chat.send('Hello');
 // Files, once a human agent has joined (LIVE_AGENT_CONNECTED): the AI does not read them
@@ -54,6 +54,8 @@ await voice.connect();   // asks for the microphone; the greeting plays meanwhil
 voice.setMuted(true);
 voice.end();
 ```
+
+A live agent's messages arrive as `human_chat`, and queue or hand-off status as `system`. An app that shows only `chat` goes silent after a hand-off.
 
 A session grant from your backend (minted with the secret key) goes in
 `sessionGrant` on `createChat` / `createVoice` and makes the caller identity

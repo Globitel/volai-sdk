@@ -252,6 +252,9 @@ paths:
         `LIVE_AGENT_CONNECTED`, `LIVE_AGENT_DISCONNECTED`, `handoff`, `context_update`,
         `SESSION_ENDED`, `error`. A `human_chat` or `chat` event may carry an
         `attachment` object (see `ChatAttachment`) when the human agent sent a file.
+        A client must display `human_chat` (a live agent's message) and `system`
+        (queue and hand-off status) as well as `chat` and `chunk` (the AI's reply),
+        or the conversation goes silent for the customer after a hand-off.
       security: [{ chatTokenQuery: [] }]
       parameters:
         - $ref: "#/components/parameters/sessionId"
