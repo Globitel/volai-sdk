@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.globitel.volai"
-version = "0.2.1"
+version = "0.3.0"
 
 android {
     namespace = "com.globitel.volai"

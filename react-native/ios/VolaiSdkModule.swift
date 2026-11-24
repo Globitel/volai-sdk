@@ -46,7 +46,9 @@ final class VolaiSdkModule: RCTEventEmitter {
             context: dict["context"] as? [String: Any],
             verificationTokens: dict["verificationTokens"] as? [String: Any],
             sessionGrant: dict["sessionGrant"] as? String,
-            publicLinkPassword: dict["publicLinkPassword"] as? String
+            publicLinkPassword: dict["publicLinkPassword"] as? String,
+            capabilities: dict["capabilities"] as? [String],
+            language: dict["language"] as? String
         )
     }
 
@@ -155,6 +157,25 @@ final class VolaiSdkModule: RCTEventEmitter {
     @objc func ackChatMessage(_ sessionId: String, messageId: String, status: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         guard let chat = chats[sessionId] else { reject("unknown_session", "No chat session \(sessionId)", nil); return }
         Task { do { try await chat.acknowledge(messageId: messageId, status: status); resolve(nil) } catch { fail(reject, error) } }
+    }
+
+    /// `reply` is the `interaction_reply` object as JSON text. A refused form resolves
+    /// with `invalidForm` and the errors by field, so the JavaScript layer can raise them.
+    @objc func chatInteractionReply(_ sessionId: String, reply: String, messageId: String?, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+        guard let chat = chats[sessionId] else { reject("unknown_session", "No chat session \(sessionId)", nil); return }
+        guard let body = (try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any] else { reject("bad_args", "reply is not a JSON object", nil); return }
+        Task {
+            do {
+                resolve(["messageId": try await chat.interactionReply(body, messageId: messageId ?? UUID().uuidString)])
+            } catch let VolaiError.invalidForm(errors, message) {
+                resolve(["invalidForm": true, "message": message, "errors": errors])
+            } catch { fail(reject, error) }
+        }
+    }
+
+    @objc func chatClientActionResult(_ sessionId: String, actionId: String, outcome: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+        guard let chat = chats[sessionId] else { reject("unknown_session", "No chat session \(sessionId)", nil); return }
+        Task { do { try await chat.reportClientAction(actionId: actionId, outcome: outcome); resolve(nil) } catch { fail(reject, error) } }
     }
 
     @objc func chatTyping(_ sessionId: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {

@@ -38,7 +38,7 @@ class VolaiClient(
         .build()
 
     companion object {
-        const val SDK_VERSION = "0.2.1"
+        const val SDK_VERSION = "0.3.0"
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
         /** Optional diagnostics sink (never receives credentials or audio). */
@@ -85,6 +85,12 @@ class VolaiClient(
         debug { "$method $path -> ${response.code} (${text.length} bytes)" }
         val json = try { JSONObject(text) } catch (_: Exception) { JSONObject() }
         if (!response.isSuccessful) {
+            if (response.code == 422 && json.optString("reason") == "invalid_form") {
+                val fields = json.optJSONObject("errors")
+                val errors = LinkedHashMap<String, String>()
+                fields?.keys()?.forEach { key -> errors[key] = fields.optString(key) }
+                throw VolaiException.InvalidForm(errors, json.optString("message").ifEmpty { "Some answers need correcting" })
+            }
             throw VolaiException.Api(
                 response.code,
                 json.optString("message").ifEmpty { response.message.ifEmpty { "HTTP ${response.code}" } },

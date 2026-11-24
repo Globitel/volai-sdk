@@ -56,7 +56,7 @@ const resample24to16 = (buf) => { const n = buf.length / 2, m = Math.floor(n * 2
 
 // ---- 2. chat --------------------------------------------------------------------
 {
-    const s = await api('/sessions', { method: 'POST', body: { agent_id: CHAT_AGENT, type: 'chat', device_id: 'conformance' } });
+    const s = await api('/sessions', { method: 'POST', body: { agent_id: CHAT_AGENT, type: 'chat', device_id: 'conformance', capabilities: ['interactive', 'forms', 'cards', 'client_actions'], language: 'en' } });
     if (check('chat session created', s.status === 200 && !!s.json.chat_token, `session=${s.json.session_id}`)) {
         const sid = s.json.session_id, tok = s.json.chat_token;
         const events = [];
@@ -69,6 +69,12 @@ const resample24to16 = (buf) => { const n = buf.length / 2, m = Math.floor(n * 2
         const t0 = Date.now();
         while (Date.now() - t0 < 40000 && !events.some((e) => e.type === 'chat' || e.type === 'chat_complete')) await sleep(250);
         check('agent reply arrived on the event stream', events.some((e) => e.type === 'chat' || e.type === 'chat_complete'), `events=${[...new Set(events.map((e) => e.type))].join(',')}`);
+        // Interactive messages: an answer to a question this session never received is refused,
+        // and so is a result for a client action it never received (needs Volai v1.4.18).
+        const stray = await api(`/sessions/${sid}/messages`, { method: 'POST', key: tok, body: { message_id: crypto.randomUUID(), interaction_reply: { interactive_id: crypto.randomUUID(), option_ids: ['x'] } } });
+        check('answer to an unknown interactive message refused', stray.status === 409 && stray.json.reason === 'interactive_not_found', `status=${stray.status} reason=${stray.json.reason}`);
+        const strayAction = await api(`/sessions/${sid}/client-actions/${crypto.randomUUID()}`, { method: 'POST', key: tok, body: { outcome: 'cancelled' } });
+        check('result for an unknown client action refused', strayAction.status === 409 || strayAction.status === 404, `status=${strayAction.status}`);
         await api(`/sessions/${sid}/close`, { method: 'POST', key: tok });
         try { await reader?.cancel(); } catch { /* closed */ }
         await Promise.race([pump, sleep(1000)]);

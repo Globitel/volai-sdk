@@ -12,7 +12,7 @@ public final class VolaiClient {
     public let sdkVersion: String
     public let session: URLSession
 
-    public static let sdkVersionString = "0.2.1"
+    public static let sdkVersionString = "0.3.0"
 
     /// Optional diagnostics sink (never logs credentials or audio).
     public static var debugLog: ((String) -> Void)?
@@ -72,6 +72,11 @@ public final class VolaiClient {
         VolaiClient.debug("\(method) \(path) -> \(http.statusCode) (\(data.count) bytes)")
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 422, json["reason"] as? String == "invalid_form" {
+                var errors: [String: String] = [:]
+                for (key, value) in json["errors"] as? [String: Any] ?? [:] { errors[key] = value as? String ?? "\(value)" }
+                throw VolaiError.invalidForm(errors: errors, message: json["message"] as? String ?? "Some answers need correcting")
+            }
             throw VolaiError.api(status: http.statusCode,
                                  message: json["message"] as? String ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
                                  code: json["code"] as? String,

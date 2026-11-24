@@ -63,6 +63,8 @@ class VolaiSdkModule(private val reactContext: ReactApplicationContext) : ReactC
         verificationTokens = if (map.hasKey("verificationTokens")) map.getMap("verificationTokens")?.toHashMap() else null,
         sessionGrant = map.getString("sessionGrant"),
         publicLinkPassword = map.getString("publicLinkPassword"),
+        capabilities = if (map.hasKey("capabilities")) map.getArray("capabilities")?.toArrayList()?.map { it.toString() } else null,
+        language = if (map.hasKey("language")) map.getString("language") else null,
     )
 
     private fun readyMap(r: SessionReady): WritableMap = Arguments.createMap().apply {
@@ -180,6 +182,31 @@ class VolaiSdkModule(private val reactContext: ReactApplicationContext) : ReactC
     fun ackChatMessage(sessionId: String, messageId: String, status: String, promise: Promise) {
         val chat = synchronized(chats) { chats[sessionId] } ?: return promise.reject("unknown_session", "No chat session $sessionId")
         scope.launch { try { chat.acknowledge(messageId, status); promise.resolve(null) } catch (e: Exception) { promise.fail(e) } }
+    }
+
+    /** [reply] is the `interaction_reply` object as JSON text. A refused form resolves with
+     *  `invalidForm` and the errors by field, so the JavaScript layer can raise them. */
+    @ReactMethod
+    fun chatInteractionReply(sessionId: String, reply: String, messageId: String?, promise: Promise) {
+        val chat = synchronized(chats) { chats[sessionId] } ?: return promise.reject("unknown_session", "No chat session $sessionId")
+        val body = try { JSONObject(reply) } catch (_: Exception) { return promise.reject("bad_args", "reply is not a JSON object") }
+        scope.launch {
+            try {
+                val id = chat.interactionReply(body, messageId ?: UUID.randomUUID().toString())
+                promise.resolve(Arguments.createMap().apply { putString("messageId", id) })
+            } catch (e: VolaiException.InvalidForm) {
+                promise.resolve(Arguments.createMap().apply {
+                    putBoolean("invalidForm", true); putString("message", e.message)
+                    putMap("errors", Arguments.createMap().apply { e.errors.forEach { (k, v) -> putString(k, v) } })
+                })
+            } catch (e: Exception) { promise.fail(e) }
+        }
+    }
+
+    @ReactMethod
+    fun chatClientActionResult(sessionId: String, actionId: String, outcome: String, promise: Promise) {
+        val chat = synchronized(chats) { chats[sessionId] } ?: return promise.reject("unknown_session", "No chat session $sessionId")
+        scope.launch { try { chat.reportClientAction(actionId, outcome); promise.resolve(null) } catch (e: Exception) { promise.fail(e) } }
     }
 
     @ReactMethod

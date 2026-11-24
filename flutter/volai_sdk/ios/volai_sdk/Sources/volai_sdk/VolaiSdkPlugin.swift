@@ -59,7 +59,9 @@ public final class VolaiSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
             context: dict["context"] as? [String: Any],
             verificationTokens: dict["verificationTokens"] as? [String: Any],
             sessionGrant: dict["sessionGrant"] as? String,
-            publicLinkPassword: dict["publicLinkPassword"] as? String
+            publicLinkPassword: dict["publicLinkPassword"] as? String,
+            capabilities: dict["capabilities"] as? [String],
+            language: dict["language"] as? String
         )
     }
 
@@ -132,6 +134,24 @@ public final class VolaiSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
         case "ackChatMessage":
             guard let chat = requireChat(args, result), let messageId = args["messageId"] as? String, let status = args["status"] as? String else { return }
             Task { do { try await chat.acknowledge(messageId: messageId, status: status); reply(result, nil) } catch { fail(result, error) } }
+        case "chatInteractionReply":
+            // `reply` is the `interaction_reply` object as JSON text. A refused form answers
+            // with `invalidForm` and the errors by field, so the Dart layer can raise them.
+            guard let chat = requireChat(args, result) else { return }
+            guard let text = args["reply"] as? String, let body = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else {
+                result(FlutterError(code: "bad_args", message: "reply is not a JSON object", details: nil)); return
+            }
+            let messageId = args["messageId"] as? String ?? UUID().uuidString
+            Task {
+                do {
+                    reply(result, ["messageId": try await chat.interactionReply(body, messageId: messageId)])
+                } catch let VolaiError.invalidForm(errors, message) {
+                    reply(result, ["invalidForm": true, "message": message, "errors": errors] as [String: Any])
+                } catch { fail(result, error) }
+            }
+        case "chatClientActionResult":
+            guard let chat = requireChat(args, result), let actionId = args["actionId"] as? String, let outcome = args["outcome"] as? String else { return }
+            Task { do { try await chat.reportClientAction(actionId: actionId, outcome: outcome); reply(result, nil) } catch { fail(result, error) } }
         case "chatTyping":
             guard let chat = requireChat(args, result) else { return }
             Task { do { try await chat.typing(); reply(result, nil) } catch { fail(result, error) } }

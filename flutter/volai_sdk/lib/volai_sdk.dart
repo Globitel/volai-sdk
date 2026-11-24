@@ -3,6 +3,7 @@
 // native code; this file exposes the same shape as the other SDKs:
 // VolaiClient, chat sessions and voice calls.
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
@@ -45,6 +46,18 @@ class VolaiException implements Exception {
   String toString() => 'VolaiException($code${status != null ? ' $status' : ''}): $message';
 }
 
+/// Thrown by [VolaiChatSession.submitForm] when the server refuses the
+/// answers: [errors] holds one message per field key. Keep the form open and
+/// show them.
+class VolaiFormException implements Exception {
+  VolaiFormException(this.message, this.errors);
+  final String message;
+  final Map<String, String> errors;
+
+  @override
+  String toString() => 'VolaiFormException: $message $errors';
+}
+
 VolaiException _wrap(PlatformException e) {
   final details = e.details;
   int? status;
@@ -75,6 +88,8 @@ class SessionRequest {
     this.verificationTokens,
     this.sessionGrant,
     this.publicLinkPassword,
+    this.capabilities,
+    this.language,
   });
 
   final String agentId;
@@ -88,6 +103,16 @@ class SessionRequest {
   /// Session grant minted by your backend with the secret key.
   final String? sessionGrant;
   final String? publicLinkPassword;
+  /// Chat only. What the app draws itself: any of `interactive` (a question
+  /// with options), `forms`, `cards`, `client_actions` (a step of a guided
+  /// flow the app carries out). Each arrives as an event on
+  /// [VolaiChatSession.events]; without the capability the same content
+  /// arrives as plain text, so an app that sets nothing keeps working.
+  final List<String>? capabilities;
+  /// The language of the app's own screens, as a short tag (`ar`, `en`). When
+  /// it is one of the agent's languages the conversation starts and stays in
+  /// it: greeting, replies and translated forms. Anything else is ignored.
+  final String? language;
 
   Map<String, Object?> toMap() => {
         'agentId': agentId,
@@ -99,6 +124,8 @@ class SessionRequest {
         'verificationTokens': verificationTokens,
         'sessionGrant': sessionGrant,
         'publicLinkPassword': publicLinkPassword,
+        'capabilities': capabilities,
+        'language': language,
       };
 }
 
@@ -229,6 +256,11 @@ class VolaiChatSession {
 
   /// Chat events as delivered by the server (`type`: chat, chunk, chat_complete,
   /// typing, SESSION_ENDED, ...).
+  ///
+  /// With [SessionRequest.capabilities] set, also `interactive` (its
+  /// `interactive` map is a question with options, a form or a card, by
+  /// `kind`), `interactive_answered` (lock what was drawn) and `client_action`
+  /// (a step the app carries out: `id`, `action`, `params`, `token`, `content`).
   Stream<Map<String, dynamic>> get events => _controller.stream;
 
   /// Opens the event stream. Idempotent.
@@ -247,13 +279,48 @@ class VolaiChatSession {
   Future<String> send(String content, {String? messageId}) =>
       _call<String>('sendChatMessage', {'sessionId': info.sessionId, 'content': content, 'messageId': messageId});
 
-  /// Uploads a local file for this conversation.
+  Future<String> _interactionReply(Map<String, Object?> reply, String? messageId) async {
+    final raw = _toMap(await _call<Map<Object?, Object?>>('chatInteractionReply', {
+      'sessionId': info.sessionId, 'reply': jsonEncode(reply), 'messageId': messageId,
+    }));
+    if (raw['invalidForm'] == true) {
+      final errors = _toMap(raw['errors']).map((k, v) => MapEntry(k, v.toString()));
+      throw VolaiFormException(raw['message'] as String? ?? 'Some answers need correcting', errors);
+    }
+    return raw['messageId'] as String;
+  }
+
+  /// Answers an `interactive` event with the options the customer tapped: a
+  /// question's options, or a card's action. The reply arrives on [events].
+  /// Throws a [VolaiException] with `status` 409 when it can no longer be
+  /// answered. Returns the message id.
+  Future<String> reply(String interactiveId, List<String> optionIds, {String? messageId}) =>
+      _interactionReply({'interactive_id': interactiveId, 'option_ids': optionIds}, messageId);
+
+  /// Sends a form's answers by field key (leave out fields hidden by
+  /// `visible_when`). Throws [VolaiFormException] with one message per field
+  /// when the server refuses them: show the messages and keep the form open.
+  Future<String> submitForm(String interactiveId, Map<String, Object?> values, {String? messageId}) =>
+      _interactionReply({'interactive_id': interactiveId, 'values': values}, messageId);
+
+  /// Closes a form without sending it.
+  Future<String> cancelForm(String interactiveId, {String? messageId}) =>
+      _interactionReply({'interactive_id': interactiveId, 'cancelled': true}, messageId);
+
+  /// Tells a guided flow that a `client_action` was cancelled by the customer
+  /// or failed in the app ([outcome] is `cancelled` or `failed`). Success
+  /// cannot be reported from the app: hand the event's `token` to your
+  /// backend, which reports the result with the secret key.
+  Future<void> reportClientAction(String actionId, String outcome) =>
+      _call<void>('chatClientActionResult', {'sessionId': info.sessionId, 'actionId': actionId, 'outcome': outcome});
+
+  /// Uploads a local file for this conversation, at any point of the chat.
   ///
-  /// Files are accepted only while a human agent owns the chat: before a
-  /// transfer the call throws a [VolaiException] with `status` 409 and
-  /// `reason` `attachments_unavailable` (the AI does not read files). Watch
-  /// `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` on [events] to show or
-  /// hide an attach control. One file of up to 10 MB: images, audio,
+  /// With a human agent on the chat the file reaches the agent; while the AI
+  /// owns it the AI agent's Attachments setting answers (an automatic reply,
+  /// optionally a transfer). Servers older than 1.3.104 throw a
+  /// [VolaiException] with `status` 409 and `reason` `attachments_unavailable`
+  /// before a transfer. One file of up to 10 MB: images, audio,
   /// mp4/webm/ogg, PDF, Office documents, text and CSV. [path] is a file path
   /// or `file://` URI (Android also accepts a `content://` URI); [filename]
   /// defaults to the file's own name and [mimeType] to a guess from it.

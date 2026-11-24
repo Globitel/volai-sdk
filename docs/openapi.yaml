@@ -162,10 +162,26 @@ paths:
           application/json:
             schema:
               type: object
-              required: [message_id, content]
+              required: [message_id]
               properties:
                 message_id: { type: string, format: uuid }
-                content: { type: string }
+                content: { type: string, description: "The customer's text. Required unless `interaction_reply` is sent." }
+                interaction_reply:
+                  type: object
+                  description: |
+                    A tap on an interactive message (see the `interactive` event). The server
+                    writes the chosen options' titles as the customer's message, so `content`
+                    can be omitted. The first answer locks the question (`interactive_answered`
+                    follows); a later tap on the same question is treated as an ordinary
+                    message with that title.
+                  required: [interactive_id, option_ids]
+                  properties:
+                    interactive_id: { type: string, format: uuid }
+                    option_ids: { type: array, items: { type: string }, minItems: 1, description: "For a message of kind `choices`." }
+                    values:
+                      type: object
+                      description: "For a message of kind `form`: the customer's answers by field key. The server checks them; a refused submit answers 422 with `reason: invalid_form` and `errors` by field key, and the form stays open."
+                    cancelled: { type: boolean, description: "For a message of kind `form`: the customer closed it without sending." }
                 attachment:
                   allOf: [{ $ref: "#/components/schemas/ChatAttachment" }]
                   nullable: true
@@ -173,18 +189,24 @@ paths:
       responses:
         "200": { description: Accepted; the reply arrives on the events stream (NDJSON may also be streamed in this response) }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: "`reason: interactive_not_found`: an `interaction_reply` without `content` named a question that is not part of this session. `reason: interactive_closed`: the form was already sent, cancelled or replaced" }
+        "422": { description: "`reason: invalid_form`: a form's values were refused; `errors` holds one message per field key" }
         "429": { description: Session message cap or tenant monthly chat quota reached }
   /sessions/{sessionId}/attachments:
     post:
       tags: [Chat]
       summary: Upload a file to send in this chat
       description: |
-        `multipart/form-data` with one `file` part. Files are accepted only while a
-        human agent owns the conversation (after `LIVE_AGENT_CONNECTED`, until
-        `LIVE_AGENT_DISCONNECTED`); before that the upload is refused with 409 and
-        `reason: attachments_unavailable`, because the AI does not read files. Send the
-        returned `attachment` object unchanged in the next `messages` call, with a
-        caption such as `Sent a file: <name>`. Files the human agent sends arrive as
+        `multipart/form-data` with one `file` part, accepted at any point of the
+        conversation. With a human agent on the chat (after `LIVE_AGENT_CONNECTED`,
+        until `LIVE_AGENT_DISCONNECTED`) the file reaches the agent. While the AI owns
+        the chat it does not read the file: the AI agent's Attachments setting decides
+        whether the platform sends an automatic reply and optionally transfers the chat
+        to a human agent, or whether the model is told a file arrived and answers on its
+        own. Servers older than 1.3.104 refuse the upload before a transfer with 409 and
+        `reason: attachments_unavailable`. Send the returned `attachment` object
+        unchanged in the next `messages` call, with a caption such as
+        `Sent a file: <name>`. Files the human agent sends arrive as
         `human_chat` (or `chat`) events carrying the same `attachment` object; its `url`
         is relative to the Volai origin. One file of up to 10 MB: JPEG, PNG, GIF, WebP,
         WAV, MP3, M4A, MP4, WebM, OGG, PDF, DOC/DOCX, XLS/XLSX, TXT, CSV. 20 uploads
@@ -213,7 +235,7 @@ paths:
                   max_bytes: { type: integer, description: Server cap on one file }
         "400": { description: No file, or a file type outside the allowlist }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "409": { description: "No human agent on the conversation (`reason: attachments_unavailable`)" }
+        "409": { description: "Servers older than 1.3.104 only: no human agent on the conversation (`reason: attachments_unavailable`)" }
         "413": { description: File larger than `max_bytes` }
         "429": { $ref: "#/components/responses/RateLimited" }
   /sessions/{sessionId}/acks:
@@ -255,6 +277,37 @@ paths:
         A client must display `human_chat` (a live agent's message) and `system`
         (queue and hand-off status) as well as `chat` and `chunk` (the AI's reply),
         or the conversation goes silent for the customer after a hand-off.
+
+        A session created with `capabilities: ["interactive"]` also receives
+        `interactive` and `interactive_answered`. `interactive` carries a question with
+        options for the app to draw: `{ id, role: "agent", content, interactive }`, where
+        `interactive` is an `InteractiveMessage` and `content` is the same question as
+        numbered text. It follows the turn's text; a turn that is only a question has a
+        `chat_complete` with empty `content` and no `id`. Answer it with
+        `interaction_reply` on the messages endpoint. `interactive_answered`
+        (`{ id, option_ids, source }`, `source` is `native` for a tap and `text` when the
+        customer typed the option's number or title) follows the first answer: lock the
+        options and mark the chosen ones. A session created without the capability
+        receives the question as numbered text inside the normal reply and none of this.
+
+        A session created with `capabilities: ["interactive", "forms"]` also receives
+        forms: an `interactive` event whose `interactive` has `kind: "form"`, a `form`
+        (title, submit label, fields in the conversation language) and a `prefill` of
+        values the agent already knew. Draw the fields, send the answers as
+        `interaction_reply.values`, or `interaction_reply.cancelled: true`. For a form,
+        `interactive_answered` carries `outcome` (`submitted`, `cancelled`) and the
+        accepted `values`, with sensitive ones replaced by `***`. Without `forms` the
+        customer is asked the form one question per message as ordinary text.
+
+        With `client_actions` among the session's `capabilities`, a guided flow may
+        send `client_action`: `{ id, action, params, token, content }`. The app carries
+        out the named action in its own screens (a login, a payment) and hands `token`
+        to its backend, which reports the result with the secret key
+        (`POST /client-actions/complete`). The app itself may only report that the
+        action was cancelled or failed (`POST /sessions/{sessionId}/client-actions/{actionId}`).
+        The flow's next message arrives on this stream. `client_action` is not replayed
+        after a reconnect. Without the capability the customer reads `content`, followed
+        by a link when the flow has one.
       security: [{ chatTokenQuery: [] }]
       parameters:
         - $ref: "#/components/parameters/sessionId"
@@ -280,6 +333,61 @@ paths:
       parameters: [{ $ref: "#/components/parameters/sessionId" }]
       responses:
         "200": { description: Closed }
+  /sessions/{sessionId}/client-actions/{actionId}:
+    post:
+      tags: [Chat]
+      summary: Report that a client action was cancelled or failed
+      description: |
+        The app's own word about a `client_action` it received. It cannot report
+        success: any outcome other than `cancelled` is recorded as `failed`. A
+        finished action is reported by the customer's backend.
+      security: [{ chatToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+        - in: path
+          name: actionId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [cancelled, failed] }
+      responses:
+        "200": { description: Recorded; the flow carries on }
+        "409": { description: The action is no longer waiting for a result }
+  /client-actions/complete:
+    post:
+      tags: [Grants]
+      summary: Report the result of a client action (server to server)
+      description: |
+        Called by the customer's backend with the **secret** key, with the `token`
+        the app received in `client_action` (or the `volai_action` query parameter
+        of the flow's link). `data` may carry values the flow declared; anything
+        else is ignored. The token is valid for 30 minutes and for one result.
+        Never send card numbers or passwords.
+      security: [{ secretKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, outcome]
+              properties:
+                token: { type: string }
+                outcome: { type: string, enum: [done, cancelled, failed] }
+                data:
+                  type: object
+                  additionalProperties: { oneOf: [{ type: string }, { type: number }, { type: boolean }] }
+      responses:
+        "200": { description: Recorded; the flow carries on }
+        "400": { description: The token is not valid or has expired, or the outcome is not one of the three }
+        "409": { description: The action is no longer waiting for a result }
   /session-grants:
     post:
       tags: [Grants]
@@ -378,7 +486,6 @@ components:
         name: { type: string }
         description: { type: string }
         type: { type: string }
-        agentArchitecture: { type: string, enum: [pipeline, openai_realtime] }
         embedMode: { type: string, enum: [chat, voice, both] }
         voiceTransports:
           type: array
@@ -418,6 +525,117 @@ components:
             email: { type: string }
         session_grant: { type: string, description: "From POST /session-grants" }
         public_link_password: { type: string }
+        language:
+          type: string
+          example: ar
+          description: "The language of the app's own screens, as a short tag (`ar`, `en`, `ar-kw`). When it is one of the agent's languages, the conversation starts and stays in it: the greeting, the agent's replies and translated forms. A language the agent does not allow, or a malformed value, is ignored and the agent's own language setting applies. The customer can still ask the agent to switch. Texts of guided flows are in the language they were written in."
+        capabilities:
+          type: array
+          items: { type: string, enum: [interactive, forms, cards, client_actions] }
+          description: "Chat only. What the app draws itself. `interactive`: questions with options arrive as `interactive` events instead of numbered text. `forms`: forms arrive as `interactive` events of kind `form` instead of one question per message. `cards`: cards arrive as `interactive` events of kind `card`; without it a card arrives as a question with options (with `interactive`) or as text. `client_actions`: a guided flow may send a `client_action` event for a step the app carries out itself; without it the customer reads the step's text and link. Unknown values are ignored."
+    InteractiveCard:
+      type: object
+      description: |
+        Structured information for the app to draw (`interactive` event, `kind` `card`). It asks for nothing.
+        `fields` are generic and always usable. `template` and `data`, when present, name the app's own card
+        and carry its raw values, passed through from the agent untouched: draw your own card from them and
+        fall back to `fields` for a template you do not know. An action is answered with
+        `interaction_reply.option_ids: [action id]`; `interactive_answered` follows.
+      required: [id, kind, text, fields, actions]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [card] }
+        text: { type: string, description: The card's title }
+        body: { type: string }
+        image:
+          type: object
+          properties: { url: { type: string, format: uri } }
+        fields:
+          type: array
+          maxItems: 12
+          items:
+            type: object
+            required: [label, value]
+            properties:
+              label: { type: string }
+              value: { type: string }
+              progress: { type: number, minimum: 0, maximum: 1, description: Draw as a bar }
+        actions:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            required: [id, title]
+            properties: { id: { type: string }, title: { type: string } }
+        template: { type: string, description: "Lowercase name of the app's own card, as the tenant told the agent" }
+        data: { type: object, description: Raw values for the template, at most 4 KB of JSON }
+    InteractiveForm:
+      type: object
+      description: A form for the app to draw (`interactive` event, `kind` `form`). Labels are already in the conversation language.
+      required: [id, kind, text, form]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [form] }
+        text: { type: string, description: The form's title }
+        form_key: { type: string }
+        language: { type: string, example: ar }
+        prefill: { type: object, description: "Values by field key that the agent already knew; show them filled in and editable" }
+        form:
+          type: object
+          required: [title, submit_label, fields]
+          properties:
+            title: { type: string }
+            submit_label: { type: string }
+            intro: { type: string }
+            fields:
+              type: array
+              maxItems: 20
+              items:
+                type: object
+                required: [key, label, type]
+                properties:
+                  key: { type: string }
+                  label: { type: string }
+                  type: { type: string, enum: [text, textarea, number, select, multiselect, date, checkbox, rating, scale, tags], description: "`date` values are YYYY-MM-DD; `rating` is 1 to 5, `scale` 0 to 10; `multiselect` and `tags` are arrays of option values; `checkbox` is a boolean" }
+                  required: { type: boolean }
+                  options: { type: array, items: { type: object, properties: { value: { type: string }, label: { type: string } } } }
+                  max_length: { type: integer }
+                  pattern: { type: string, description: Regular expression the whole value must match (text only) }
+                  pattern_hint: { type: string }
+                  help: { type: string }
+                  sensitive: { type: boolean, description: "Mask the input; the value comes back as `***`" }
+                  visible_when:
+                    type: object
+                    description: "Show the field only when the named earlier field has this value; a hidden field is not sent"
+                    properties: { field: { type: string }, equals: {} }
+    InteractiveMessage:
+      type: object
+      description: A question with options, in one shape for every channel. The app draws it; the SDK has no user interface.
+      required: [id, kind, text, layout, options]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [choices] }
+        text: { type: string, description: The question, up to 1000 characters }
+        layout: { type: string, enum: [buttons, list, cards], description: "A hint. `buttons`: up to three short options. `list`: more options, longer titles or second lines. `cards`: options with pictures." }
+        multi: { type: boolean, description: Always false in this release (one option per answer) }
+        button_label: { type: string, description: "Label for a control that opens the options, in the conversation language" }
+        image:
+          type: object
+          properties: { url: { type: string, format: uri } }
+        options:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            type: object
+            required: [id, title]
+            properties:
+              id: { type: string }
+              title: { type: string, maxLength: 60 }
+              description: { type: string, maxLength: 72 }
+              image:
+                type: object
+                properties: { url: { type: string, format: uri, description: Absolute https URL } }
     VoiceSession:
       type: object
       properties:

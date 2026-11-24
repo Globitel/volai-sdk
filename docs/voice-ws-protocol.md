@@ -64,8 +64,9 @@ Uplink: 16 kHz, 20 ms frames (640 bytes of PCM). Downlink: 24 kHz, 20 ms frames 
 
 | Type | Fields | Meaning |
 |---|---|---|
-| `client.hello` | `sdk`, `version`, `platform`, `mode` (`full_duplex` default, or `half_duplex`) | First message after connect |
+| `client.hello` | `sdk`, `version`, `platform`, `mode` (`full_duplex` default, or `half_duplex`), `user_agent` (optional, up to 300 characters) | First message after connect. `sdk`, `version`, `platform` and `user_agent` are kept on the call log (`client_sdk`, `client_user_agent` in the session context) so a call can be tied to a browser or app build |
 | `mic.muted` | `muted` | Uplink is ignored while muted; the server feeds the agent silence at the frame cadence instead, so a turn that ended just before muting is still detected and answered |
+| `mic.silent` | `silent`, `reason` (`no_signal`, `track_muted`, `track_ended`), `after_ms?`, `peak_dbfs?` | Optional: the client saw its own capture deliver nothing (a flat signal for several seconds after capture started, or the OS muted or ended the track) and later that it recovered (`silent: false`). The server logs it and marks the call (`caller_audio` = `silent` or `resumed`). The web client sends it after 8 s of flat audio |
 | `playback.flushed` | `epoch` | Optional: client finished dropping an older epoch |
 | `ping` | `ts` | Answered with `pong` |
 | `stats` | `rtt_ms` | Optional client measurements |
@@ -85,6 +86,7 @@ Uplink: 16 kHz, 20 ms frames (640 bytes of PCM). Downlink: 24 kHz, 20 ms frames 
 | `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` | | Human agent joined or left |
 | `stats` | `epoch`, `uplink_frames`, `uplink_dropped`, `downlink_frames`, `downlink_dropped`, `downlink_buffered_ms`, `reconnects` | Every 5 seconds |
 | `pong` | `ts`, `server_ts` | |
+| `mic.silent` | `silent`, `reason`, `after_ms`, `source: "server"` | The server's own watch on the uplink: the caller has sent 8 s of audio (configurable, `WS_AUDIO_SILENT_MIC_AFTER_MS`) without a sample above the noise floor, or sound arrived after such a report (`silent: false`). Apps should show a "we can't hear you" notice: the usual causes are the OS denying the app the microphone, another app holding the device, or a Bluetooth headset without its microphone profile. Silence after the caller has spoken is never reported |
 | `session_ended` | `reason` | Server ended the call; the socket closes right after |
 | `error` | `code`, `message`, `fatal` | |
 

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:volai_sdk/volai_sdk.dart';
 
 // Fill these in for your environment. On a development stack use the host

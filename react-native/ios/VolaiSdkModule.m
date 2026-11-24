@@ -11,6 +11,8 @@ RCT_EXTERN_METHOD(sendChatMessage:(NSString *)sessionId content:(NSString *)cont
 RCT_EXTERN_METHOD(uploadChatAttachment:(NSString *)sessionId path:(NSString *)path filename:(NSString *)filename mimeType:(NSString *)mimeType resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(sendChatAttachment:(NSString *)sessionId path:(NSString *)path filename:(NSString *)filename mimeType:(NSString *)mimeType content:(NSString *)content messageId:(NSString *)messageId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(ackChatMessage:(NSString *)sessionId messageId:(NSString *)messageId status:(NSString *)status resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(chatInteractionReply:(NSString *)sessionId reply:(NSString *)reply messageId:(NSString *)messageId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(chatClientActionResult:(NSString *)sessionId actionId:(NSString *)actionId outcome:(NSString *)outcome resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(chatTyping:(NSString *)sessionId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(closeChat:(NSString *)sessionId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(createVoice:(NSDictionary *)request mode:(NSString *)mode resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

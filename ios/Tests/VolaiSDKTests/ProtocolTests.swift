@@ -119,6 +119,18 @@ final class ModelTests: XCTestCase {
         XCTAssertNil(body["caller_phone"])
     }
 
+    func testSessionRequestCarriesCapabilitiesAndLanguage() {
+        let chat = SessionRequest(agentId: "a", capabilities: ["interactive", "forms"], language: "ar").body(type: "chat", transport: nil)
+        XCTAssertEqual(chat["capabilities"] as? [String], ["interactive", "forms"])
+        XCTAssertEqual(chat["language"] as? String, "ar")
+        let voice = SessionRequest(agentId: "a", capabilities: ["interactive"], language: "en").body(type: "voice", transport: "ws_audio")
+        XCTAssertNil(voice["capabilities"])
+        XCTAssertEqual(voice["language"] as? String, "en")
+        let empty = SessionRequest(agentId: "a", capabilities: [], language: " ").body(type: "chat", transport: nil)
+        XCTAssertNil(empty["capabilities"])
+        XCTAssertNil(empty["language"])
+    }
+
     func testVoiceSessionInfoRejectsMissingFields() {
         XCTAssertThrowsError(try VoiceSessionInfo(json: JSONObject(["session_id": "s"])))
     }
