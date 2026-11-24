@@ -7,6 +7,22 @@ import { decodeFrame, encodeFrame } from './wsAudioFrames';
 
 export type WsAudioMode = 'full_duplex' | 'half_duplex';
 export type WsAudioState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'ended';
+/** Why the microphone is sending nothing: a flat signal from the start,
+ *  the browser muted the track (device gone, page backgrounded on iOS), or
+ *  the track ended. */
+export type MicSilentReason = 'no_signal' | 'track_muted' | 'track_ended';
+export interface MicHealth {
+  silent: boolean;
+  reason: MicSilentReason;
+  /** Who noticed: this client, or the server watching the uplink. */
+  source: 'client' | 'server';
+  after_ms?: number | null;
+  peak_dbfs?: number | null;
+}
+
+// |sample| <= 4 on 16-bit PCM is about −78 dBFS: zeros plus dither. A live
+// microphone in a quiet room, even with noise suppression, sits well above it.
+const SILENT_PEAK = 4;
 
 export interface WsAudioClientOptions {
   /** Socket URL from the session response (ws_audio transport). */
@@ -19,6 +35,11 @@ export interface WsAudioClientOptions {
   prebufferMs?: number;
   /** Extra getUserMedia audio constraints. */
   audioConstraints?: MediaTrackConstraints;
+  /** Microphone audio that stays flat for this long after capture starts is
+   *  reported as `micSilent` (and to the server). Default 8000 ms. */
+  silentMicAfterMs?: number;
+  /** Sent in client.hello so the call log records the browser; defaults to navigator.userAgent. */
+  userAgent?: string;
 }
 
 export interface SessionReady {
@@ -147,6 +168,7 @@ registerProcessor('volai-playback', VolaiPlayback);
 `;
 
 const blobModule = (code: string) => URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+const dbfs = (peak: number) => (peak > 0 ? Math.round(20 * Math.log10(peak / 32768) * 10) / 10 : null);
 
 export class VolaiWsAudioClient {
   readonly options: Required<Pick<WsAudioClientOptions, 'wsUrl' | 'mode' | 'prebufferMs'>> & WsAudioClientOptions;
@@ -154,8 +176,14 @@ export class VolaiWsAudioClient {
   ready: SessionReady | null = null;
   muted = false;
   agentSpeaking = false;
+  /** Set while the microphone is known to send nothing; `micSilent` events announce changes. */
+  micSilent: MicSilentReason | null = null;
 
   private ws: WebSocket | null = null;
+  private levelMs = 0;
+  private levelPeak = 0;
+  private heardAudio = false;
+  private levelReported = false;
   private listeners = new Map<string, Set<Listener>>();
   private captureCtx: AudioContext | null = null;
   private playbackCtx: AudioContext | null = null;
@@ -257,11 +285,61 @@ export class VolaiWsAudioClient {
     await this.captureCtx.audioWorklet.addModule(blobModule(CAPTURE_WORKLET));
     const source = this.captureCtx.createMediaStreamSource(this.stream);
     this.captureNode = new AudioWorkletNode(this.captureCtx, 'volai-capture', { numberOfOutputs: 0 });
-    this.captureNode.port.onmessage = (e: MessageEvent<Int16Array>) => this.sendUplink(e.data);
+    this.captureNode.port.onmessage = (e: MessageEvent<Int16Array>) => {
+      this.observeUplink(e.data);
+      this.sendUplink(e.data);
+    };
     source.connect(this.captureNode);
     this.stream.getAudioTracks().forEach((t) => { t.enabled = !this.muted; });
+    this.watchTrack(this.stream.getAudioTracks()[0]);
     await this.captureCtx.resume();
     this.emit('capture', true);
+  }
+
+  // ---- microphone health ---------------------------------------------------
+  // A browser can hand out a live track that carries only zeros (the OS
+  // denied it the microphone, another app holds the device, a Bluetooth
+  // headset without its mic profile). The frames still flow, so without
+  // this the caller hears the greeting and then waits for nothing.
+
+  private watchTrack(track: MediaStreamTrack | undefined) {
+    if (!track) return;
+    if (track.muted) this.reportMic(true, 'track_muted');
+    track.onmute = () => this.reportMic(true, 'track_muted');
+    track.onunmute = () => { if (this.micSilent === 'track_muted') this.reportMic(false, 'track_muted'); };
+    track.onended = () => { if (!this.ended) this.reportMic(true, 'track_ended'); };
+  }
+
+  private observeUplink(pcm: Int16Array) {
+    if (this.muted || this.ended) return;
+    let peak = 0;
+    for (let i = 0; i < pcm.length; i += 1) {
+      const a = pcm[i] < 0 ? -pcm[i] : pcm[i];
+      if (a > peak) peak = a;
+    }
+    this.levelMs += pcm.length / 16; // 16 kHz
+    if (peak > this.levelPeak) this.levelPeak = peak;
+    if (peak > SILENT_PEAK) {
+      this.heardAudio = true;
+      if (this.micSilent === 'no_signal') this.reportMic(false, 'no_signal', { after_ms: Math.round(this.levelMs), peak_dbfs: dbfs(peak) });
+      return;
+    }
+    const after = this.options.silentMicAfterMs ?? 8000;
+    if (!this.heardAudio && !this.levelReported && this.levelMs >= after) {
+      this.levelReported = true;
+      this.reportMic(true, 'no_signal', { after_ms: Math.round(this.levelMs), peak_dbfs: dbfs(this.levelPeak) });
+    }
+  }
+
+  private reportMic(silent: boolean, reason: MicSilentReason, extra: { after_ms?: number | null; peak_dbfs?: number | null } = {}) {
+    if (silent && this.micSilent === reason) return;
+    if (!silent && this.micSilent == null) return;
+    this.micSilent = silent ? reason : null;
+    const health: MicHealth = { silent, reason, source: 'client', after_ms: extra.after_ms ?? null, peak_dbfs: extra.peak_dbfs ?? null };
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try { this.ws.send(JSON.stringify({ type: 'mic.silent', silent, reason, after_ms: health.after_ms, peak_dbfs: health.peak_dbfs })); } catch { /* closed */ }
+    }
+    this.emit('micSilent', health);
   }
 
   private openSocket(url: string): Promise<SessionReady> {
@@ -277,6 +355,7 @@ export class VolaiWsAudioClient {
           version: this.options.version || '0.1.0',
           platform: this.options.platform || 'web',
           mode: this.options.mode,
+          user_agent: (this.options.userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '') ?? '').slice(0, 300),
         }));
       };
       ws.onmessage = (ev) => {
@@ -358,6 +437,16 @@ export class VolaiWsAudioClient {
       case 'pong':
         if (typeof msg.ts === 'number') this.rttMs = Date.now() - msg.ts;
         break;
+      case 'mic.silent': {
+        // The server watched the uplink and saw the same stream; only a
+        // verdict that differs from ours is news.
+        const silent = msg.silent !== false;
+        if (silent === (this.micSilent != null)) break;
+        const reason: MicSilentReason = msg.reason === 'track_muted' || msg.reason === 'track_ended' ? msg.reason : 'no_signal';
+        this.micSilent = silent ? reason : null;
+        this.emit('micSilent', { silent, reason, source: 'server', after_ms: typeof msg.after_ms === 'number' ? msg.after_ms : null, peak_dbfs: null } satisfies MicHealth);
+        break;
+      }
       case 'session_ended':
       case 'SESSION_ENDED':
         this.ended = true;

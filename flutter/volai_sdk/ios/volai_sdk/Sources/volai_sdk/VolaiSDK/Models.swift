@@ -9,6 +9,9 @@ public enum VolaiError: Error, LocalizedError {
     case unsupportedTransport(String)
     case invalidResponse(String)
     case microphoneDenied
+    /// The server refused a submitted form (HTTP 422, `invalid_form`): one
+    /// message per field key. Keep the form open and show them.
+    case invalidForm(errors: [String: String], message: String)
 
     public var errorDescription: String? {
         switch self {
@@ -17,6 +20,7 @@ public enum VolaiError: Error, LocalizedError {
         case let .unsupportedTransport(transport): return "Server picked transport \"\(transport)\", which this SDK does not implement"
         case let .invalidResponse(message): return "Invalid response: \(message)"
         case .microphoneDenied: return "Microphone access was denied"
+        case let .invalidForm(_, message): return message
         }
     }
 }
@@ -48,6 +52,7 @@ public struct JSONObject: Equatable {
 public struct PublicAgent {
     public let apiId: String
     public let name: String
+    /// Always nil: the server no longer reports it. Kept so existing code compiles.
     public let architecture: String?
     public let embedMode: String
     public let voiceTransports: [String]
@@ -153,10 +158,22 @@ public struct SessionRequest {
     public var verificationTokens: [String: Any]?
     public var sessionGrant: String?
     public var publicLinkPassword: String?
+    /// Chat only. What the app draws itself: any of `interactive` (questions with
+    /// options), `forms`, `cards`, `client_actions` (steps of a guided flow the app
+    /// carries out). Each arrives as an event on `VolaiChatSession.events`; without
+    /// the capability the same content arrives as plain text, so an app that sets
+    /// nothing keeps working.
+    public var capabilities: [String]?
+    /// The language of the app's own screens, as a short tag (`ar`, `en`). When it
+    /// is one of the agent's languages the conversation starts and stays in it:
+    /// greeting, replies and translated forms. Anything else is ignored and the
+    /// agent's own setting applies.
+    public var language: String?
 
     public init(agentId: String, deviceId: String? = nil, callerName: String? = nil, callerPhone: String? = nil,
                 callerEmail: String? = nil, context: [String: Any]? = nil, verificationTokens: [String: Any]? = nil,
-                sessionGrant: String? = nil, publicLinkPassword: String? = nil) {
+                sessionGrant: String? = nil, publicLinkPassword: String? = nil,
+                capabilities: [String]? = nil, language: String? = nil) {
         self.agentId = agentId
         self.deviceId = deviceId
         self.callerName = callerName
@@ -166,6 +183,8 @@ public struct SessionRequest {
         self.verificationTokens = verificationTokens
         self.sessionGrant = sessionGrant
         self.publicLinkPassword = publicLinkPassword
+        self.capabilities = capabilities
+        self.language = language
     }
 
     func body(type: String, transport: String?) -> [String: Any] {
@@ -179,6 +198,8 @@ public struct SessionRequest {
         if let verificationTokens { body["verification_tokens"] = verificationTokens }
         if let sessionGrant { body["session_grant"] = sessionGrant }
         if let publicLinkPassword { body["public_link_password"] = publicLinkPassword }
+        if type == "chat", let capabilities, !capabilities.isEmpty { body["capabilities"] = capabilities }
+        if let language, !language.trimmingCharacters(in: .whitespaces).isEmpty { body["language"] = language }
         return body
     }
 }

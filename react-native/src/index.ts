@@ -15,6 +15,8 @@ interface NativeVolaiSdk {
   uploadChatAttachment(sessionId: string, path: string, filename: string | null, mimeType: string | null): Promise<Json>;
   sendChatAttachment(sessionId: string, path: string, filename: string | null, mimeType: string | null, content: string | null, messageId: string | null): Promise<Json>;
   ackChatMessage(sessionId: string, messageId: string, status: string): Promise<void>;
+  chatInteractionReply(sessionId: string, reply: string, messageId: string | null): Promise<Json>;
+  chatClientActionResult(sessionId: string, actionId: string, outcome: string): Promise<void>;
   chatTyping(sessionId: string): Promise<void>;
   closeChat(sessionId: string): Promise<void>;
   createVoice(request: Json, mode: string): Promise<Json>;
@@ -43,6 +45,105 @@ export interface SessionRequest {
   verificationTokens?: { phone?: string | string[]; email?: string | string[] };
   sessionGrant?: string;
   publicLinkPassword?: string;
+  /**
+   * Chat only. What the app draws itself. Each arrives as an event on the chat
+   * session; without the capability the same content arrives as plain text, so
+   * an app that sets nothing keeps working.
+   * - `interactive`: a question with options (`interactive` event, InteractiveMessage)
+   * - `forms`: a form (`interactive` event of kind `form`, InteractiveForm)
+   * - `cards`: structured information (`interactive` event of kind `card`, InteractiveCard)
+   * - `client_actions`: a step of a guided flow the app carries out (`client_action` event, ClientAction)
+   */
+  capabilities?: Array<'interactive' | 'forms' | 'cards' | 'client_actions'>;
+  /**
+   * The language of the app's own screens, as a short tag ('ar', 'en'). When it
+   * is one of the agent's languages the conversation starts and stays in it:
+   * greeting, replies and translated forms. Anything else is ignored.
+   */
+  language?: string;
+}
+
+export interface InteractiveOption {
+  id: string;
+  title: string;
+  description?: string;
+  image?: { url: string };
+}
+
+/** A question with options to draw: `event.interactive` of an `interactive` event. Answer with `reply`. */
+export interface InteractiveMessage {
+  id: string;
+  kind: 'choices';
+  text: string;
+  /** A hint: 'buttons' (up to three short options), 'list', or 'cards' (options with pictures). */
+  layout: 'buttons' | 'list' | 'cards';
+  multi: boolean;
+  options: InteractiveOption[];
+  image?: { url: string };
+  button_label: string;
+}
+
+/** Structured information to draw (kind 'card'). `template` and `data` name the app's own card; answer an action with `reply(id, [actionId])`. */
+export interface InteractiveCard {
+  id: string;
+  kind: 'card';
+  text: string;
+  body?: string;
+  image?: { url: string };
+  fields: { label: string; value: string; progress?: number }[];
+  actions: { id: string; title: string }[];
+  template?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface InteractiveFormField {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'date' | 'checkbox' | 'rating' | 'scale' | 'tags';
+  required?: boolean;
+  options?: { value: string; label: string }[];
+  max_length?: number;
+  pattern?: string;
+  pattern_hint?: string;
+  help?: string;
+  sensitive?: boolean;
+  visible_when?: { field: string; equals: string | boolean };
+}
+
+/** A form to draw (kind 'form'), labels in the conversation language. Answer with `submitForm` or `cancelForm`. */
+export interface InteractiveForm {
+  id: string;
+  kind: 'form';
+  text: string;
+  form_key: string;
+  language: string;
+  form: { title: string; submit_label: string; intro?: string; fields: InteractiveFormField[] };
+  prefill: Record<string, unknown>;
+}
+
+/**
+ * A `client_action` event: a step of a guided flow the app carries out in its
+ * own screens (a login, a payment). Give `token` to your backend, which reports
+ * the result with the secret key; the app can only report `cancelled` or
+ * `failed` with `reportClientAction`.
+ */
+export interface ClientAction {
+  type: 'client_action';
+  id: string;
+  action: string;
+  params: Record<string, unknown>;
+  token: string;
+  content: string;
+}
+
+/** Thrown by `submitForm` when the server refuses the answers: one message per field key. */
+export class VolaiFormError extends Error {
+  readonly errors: Record<string, string>;
+  constructor(message: string, errors: Record<string, string>) {
+    super(message);
+    this.name = 'VolaiFormError';
+    this.errors = errors;
+  }
 }
 
 export interface PublicAgent {
@@ -147,13 +248,53 @@ export class VolaiChatSession {
     return native!.sendChatMessage(this.info.sessionId, content, messageId ?? null);
   }
 
+  private async interactionReply(reply: Json, messageId?: string): Promise<string> {
+    const result = await native!.chatInteractionReply(this.info.sessionId, JSON.stringify(reply), messageId ?? null);
+    if (result.invalidForm) {
+      throw new VolaiFormError(String(result.message || 'Some answers need correcting'), (result.errors || {}) as Record<string, string>);
+    }
+    return String(result.messageId);
+  }
+
   /**
-   * Upload a file for this conversation. Files are accepted only while a human
-   * agent owns the chat: before a transfer the call rejects with code
-   * `api_409` and reason `attachments_unavailable` (the AI does not read
-   * files). Watch `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` events to
-   * show or hide an attach control. One file of up to 10 MB: images, audio,
-   * mp4/webm/ogg, PDF, Office documents, text and CSV.
+   * Answer an `interactive` event with the options the customer tapped: a
+   * question's options, or a card's action. The reply arrives as events.
+   * Rejects with code `api_409` when it can no longer be answered.
+   */
+  reply(interactiveId: string, optionIds: string[], messageId?: string): Promise<string> {
+    return this.interactionReply({ interactive_id: interactiveId, option_ids: optionIds }, messageId);
+  }
+
+  /**
+   * Send a form's answers by field key (leave out fields hidden by
+   * `visible_when`). Throws `VolaiFormError` with one message per field when
+   * the server refuses them: show the messages and keep the form open.
+   */
+  submitForm(interactiveId: string, values: Record<string, unknown>, messageId?: string): Promise<string> {
+    return this.interactionReply({ interactive_id: interactiveId, values }, messageId);
+  }
+
+  /** Close a form without sending it. */
+  cancelForm(interactiveId: string, messageId?: string): Promise<string> {
+    return this.interactionReply({ interactive_id: interactiveId, cancelled: true }, messageId);
+  }
+
+  /**
+   * Tell a guided flow that a `client_action` was cancelled by the customer or
+   * failed in the app. Success cannot be reported from the app: your backend
+   * reports it with the secret key and the event's `token`.
+   */
+  reportClientAction(actionId: string, outcome: 'cancelled' | 'failed'): Promise<void> {
+    return native!.chatClientActionResult(this.info.sessionId, actionId, outcome);
+  }
+
+  /**
+   * Upload a file for this conversation, at any point of the chat. With a
+   * human agent on the chat the file reaches the agent; while the AI owns it
+   * the AI agent's Attachments setting answers (an automatic reply, optionally
+   * a transfer). Servers older than 1.3.104 reject with code `api_409` and
+   * reason `attachments_unavailable` before a transfer. One file of up to
+   * 10 MB: images, audio, mp4/webm/ogg, PDF, Office documents, text and CSV.
    */
   async uploadAttachment(file: AttachmentFile): Promise<UploadedAttachment> {
     return (await native!.uploadChatAttachment(this.info.sessionId, file.path, file.filename ?? null, file.mimeType ?? null)) as unknown as UploadedAttachment;

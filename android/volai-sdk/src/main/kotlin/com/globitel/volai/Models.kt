@@ -9,6 +9,8 @@ sealed class VolaiException(message: String) : Exception(message) {
     class Transport(message: String) : VolaiException(message)
     class UnsupportedTransport(val transport: String) : VolaiException("Server picked transport \"$transport\", which this SDK does not implement")
     class InvalidResponse(message: String) : VolaiException("Invalid response: $message")
+    /** The server refused a submitted form (HTTP 422, `invalid_form`): [errors] holds one message per field key. Keep the form open and show them. */
+    class InvalidForm(val errors: Map<String, String>, message: String) : VolaiException(message)
 }
 
 private fun JSONObject.str(key: String): String? = if (has(key) && !isNull(key)) optString(key) else null
@@ -17,6 +19,7 @@ private fun JSONObject.str(key: String): String? = if (has(key) && !isNull(key))
 class PublicAgent internal constructor(val json: JSONObject) {
     val apiId: String = json.str("api_id") ?: throw VolaiException.InvalidResponse("agent lookup is missing api_id")
     val name: String = json.str("name") ?: ""
+    /** Always null: the server no longer reports it. Kept so existing code compiles. */
     val architecture: String? = json.str("agentArchitecture")
     val embedMode: String = json.str("embedMode") ?: "both"
     val voiceTransports: List<String> = json.optJSONArray("voiceTransports")?.let { arr -> List(arr.length()) { arr.getString(it) } } ?: listOf("webrtc")
@@ -80,6 +83,19 @@ data class SessionRequest(
     val verificationTokens: Map<String, Any?>? = null,
     val sessionGrant: String? = null,
     val publicLinkPassword: String? = null,
+    /**
+     * Chat only. What the app draws itself: any of `interactive` (questions with options),
+     * `forms`, `cards`, `client_actions` (steps of a guided flow the app carries out).
+     * Each arrives as an event on [ChatSession.events]; without the capability the same
+     * content arrives as plain text, so an app that sets nothing keeps working.
+     */
+    val capabilities: List<String>? = null,
+    /**
+     * The language of the app's own screens, as a short tag (`ar`, `en`). When it is one of
+     * the agent's languages the conversation starts and stays in it: greeting, replies and
+     * translated forms. Anything else is ignored and the agent's own setting applies.
+     */
+    val language: String? = null,
 ) {
     internal fun body(type: String, transport: String?): JSONObject {
         val body = JSONObject().put("agent_id", agentId).put("type", type)
@@ -92,6 +108,8 @@ data class SessionRequest(
         verificationTokens?.let { body.put("verification_tokens", JSONObject(it)) }
         sessionGrant?.let { body.put("session_grant", it) }
         publicLinkPassword?.let { body.put("public_link_password", it) }
+        if (type == "chat") capabilities?.takeIf { it.isNotEmpty() }?.let { body.put("capabilities", org.json.JSONArray(it)) }
+        language?.takeIf { it.isNotBlank() }?.let { body.put("language", it) }
         return body
     }
 }

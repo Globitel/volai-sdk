@@ -82,6 +82,8 @@ class VolaiSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
         verificationTokens = (map["verificationTokens"] as? Map<*, *>)?.let { m -> m.entries.associate { it.key.toString() to it.value } },
         sessionGrant = map["sessionGrant"] as? String,
         publicLinkPassword = map["publicLinkPassword"] as? String,
+        capabilities = (map["capabilities"] as? List<*>)?.map { it.toString() },
+        language = map["language"] as? String,
     )
 
     private fun readyMap(r: SessionReady): Map<String, Any?> = mapOf(
@@ -163,6 +165,26 @@ class VolaiSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
                 val chat = requireChat(call, result) ?: return
                 val messageId = call.argument<String>("messageId") ?: ""; val status = call.argument<String>("status") ?: "read"
                 scope.launch { try { chat.acknowledge(messageId, status); result.ok(null) } catch (e: Exception) { result.fail(e) } }
+            }
+            "chatInteractionReply" -> {
+                // `reply` is the `interaction_reply` object as JSON text. A refused form answers
+                // with `invalidForm` and the errors by field, so the Dart layer can raise them.
+                val chat = requireChat(call, result) ?: return
+                val body = try { JSONObject(call.argument<String>("reply") ?: "") } catch (_: Exception) { return result.error("bad_args", "reply is not a JSON object", null) }
+                val messageId = call.argument<String>("messageId") ?: UUID.randomUUID().toString()
+                scope.launch {
+                    try {
+                        result.ok(mapOf("messageId" to chat.interactionReply(body, messageId)))
+                    } catch (e: VolaiException.InvalidForm) {
+                        result.ok(mapOf("invalidForm" to true, "message" to e.message, "errors" to e.errors))
+                    } catch (e: Exception) { result.fail(e) }
+                }
+            }
+            "chatClientActionResult" -> {
+                val chat = requireChat(call, result) ?: return
+                val actionId = call.argument<String>("actionId") ?: return result.error("bad_args", "actionId is required", null)
+                val outcome = call.argument<String>("outcome") ?: "failed"
+                scope.launch { try { chat.reportClientAction(actionId, outcome); result.ok(null) } catch (e: Exception) { result.fail(e) } }
             }
             "chatTyping" -> {
                 val chat = requireChat(call, result) ?: return

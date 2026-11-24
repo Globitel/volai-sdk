@@ -27,7 +27,11 @@ class ChatSession internal constructor(private val client: VolaiClient, val info
     private val _events = MutableSharedFlow<JSONObject>(replay = 0, extraBufferCapacity = 256, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     /** Every event the server sends: `chat`, `chunk`, `chat_complete`, `human_chat`, `typing`, `system`,
-     *  `LIVE_AGENT_CONNECTED`, `LIVE_AGENT_DISCONNECTED`, `SESSION_ENDED`, `error`, ... */
+     *  `LIVE_AGENT_CONNECTED`, `LIVE_AGENT_DISCONNECTED`, `SESSION_ENDED`, `error`, ...
+     *
+     *  With [SessionRequest.capabilities] set, also `interactive` (its `interactive` object is a question
+     *  with options, a form or a card, by `kind`), `interactive_answered` (lock what was drawn) and
+     *  `client_action` (a step the app carries out: `id`, `action`, `params`, `token`, `content`). */
     val events: SharedFlow<JSONObject> = _events
 
     @Volatile
@@ -88,6 +92,44 @@ class ChatSession internal constructor(private val client: VolaiClient, val info
         return messageId
     }
 
+    /**
+     * Answers an `interactive` event with the options the customer tapped: a question's options,
+     * or a card's action. The server records the chosen titles as the customer's message and the
+     * reply arrives on [events]. 409 `interactive_not_found` when it can no longer be answered.
+     */
+    suspend fun reply(interactiveId: String, optionIds: List<String>, messageId: String = UUID.randomUUID().toString()): String =
+        interactionReply(JSONObject().put("interactive_id", interactiveId).put("option_ids", org.json.JSONArray(optionIds)), messageId)
+
+    /**
+     * Sends a form's answers by field key (leave out fields hidden by `visible_when`).
+     * Throws [VolaiException.InvalidForm] with one message per field when the server
+     * refuses them: show the messages and keep the form open.
+     */
+    suspend fun submitForm(interactiveId: String, values: Map<String, Any?>, messageId: String = UUID.randomUUID().toString()): String =
+        interactionReply(JSONObject().put("interactive_id", interactiveId).put("values", JSONObject(values)), messageId)
+
+    /** Closes a form without sending it. */
+    suspend fun cancelForm(interactiveId: String, messageId: String = UUID.randomUUID().toString()): String =
+        interactionReply(JSONObject().put("interactive_id", interactiveId).put("cancelled", true), messageId)
+
+    /** Sends a raw `interaction_reply` object (docs/openapi.yaml); [reply], [submitForm] and [cancelForm] build it for you. */
+    suspend fun interactionReply(reply: JSONObject, messageId: String = UUID.randomUUID().toString()): String {
+        client.request("/sessions/${info.sessionId}/messages", "POST", key = info.chatToken,
+            body = JSONObject().put("message_id", messageId).put("interaction_reply", reply))
+        return messageId
+    }
+
+    /**
+     * Tells a guided flow that a `client_action` was cancelled by the customer or failed in the
+     * app ([outcome] is `cancelled` or `failed`). Success cannot be reported from the app: hand
+     * the event's `token` to your backend, which reports the result with the secret key. The
+     * flow's next message arrives on [events]. 409 when the action no longer waits.
+     */
+    suspend fun reportClientAction(actionId: String, outcome: String) {
+        client.request("/sessions/${info.sessionId}/client-actions/${java.net.URLEncoder.encode(actionId, "UTF-8")}", "POST",
+            key = info.chatToken, body = JSONObject().put("outcome", if (outcome == "cancelled") "cancelled" else "failed"))
+    }
+
     /** Sends a text message carrying an already uploaded attachment. */
     suspend fun send(content: String, messageId: String = UUID.randomUUID().toString(), attachment: ChatAttachment): String =
         send(content, messageId, attachment.toJson())
@@ -95,11 +137,11 @@ class ChatSession internal constructor(private val client: VolaiClient, val info
     /**
      * Uploads a file for this conversation (`POST /sessions/{id}/attachments`).
      *
-     * Files are accepted only while a human agent owns the chat: before a transfer the
-     * server answers 409 with `reason = attachments_unavailable` (the AI does not read
-     * files). Watch `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` on [events] to show
-     * or hide an attach control. One file of up to 10 MB: images, audio, mp4/webm/ogg,
-     * PDF, Office documents, text and CSV.
+     * Files are accepted at any point of the chat. With a human agent on the chat the file
+     * reaches the agent; while the AI owns it the AI agent's Attachments setting answers (an
+     * automatic reply, optionally a transfer to a human agent). Servers older than 1.3.104
+     * answer 409 with `reason = attachments_unavailable` before a transfer. One file of up to
+     * 10 MB: images, audio, mp4/webm/ogg, PDF, Office documents, text and CSV.
      */
     suspend fun uploadAttachment(bytes: ByteArray, filename: String, mimeType: String = ChatAttachment.guessMimeType(filename)): ChatAttachment {
         val json = client.upload("/sessions/${info.sessionId}/attachments", key = info.chatToken, bytes = bytes, filename = filename, mimeType = mimeType)

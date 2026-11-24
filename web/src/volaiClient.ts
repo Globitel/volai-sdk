@@ -20,7 +20,6 @@ export interface PublicAgent {
   name: string;
   description?: string;
   type?: string;
-  agentArchitecture?: string;
   embedMode?: 'chat' | 'voice' | 'both';
   voiceTransports: Array<'webrtc' | 'ws_audio'>;
   defaultVoiceTransport: 'webrtc' | 'ws_audio';
@@ -41,6 +40,24 @@ export interface CreateSessionInput {
   verificationTokens?: { phone?: string | string[]; email?: string | string[] };
   sessionGrant?: string;
   publicLinkPassword?: string;
+  /**
+   * What the app draws itself. With 'interactive', a question with options
+   * arrives as an `interactive` event carrying an InteractiveMessage; without
+   * it the same question arrives as numbered text inside the reply. With
+   * 'forms' as well, a form arrives as an `interactive` event of kind 'form'
+   * (InteractiveForm); without it the customer is asked one question per
+   * message. With 'cards', structured information arrives as an
+   * InteractiveCard. With 'client_actions', a guided flow may hand a step to
+   * the app as a `client_action` event (ClientAction).
+   */
+  capabilities?: Array<'interactive' | 'forms' | 'cards' | 'client_actions'>;
+  /**
+   * The language of the app's own screens, as a short tag ('ar', 'en').
+   * When it is one of the agent's languages the conversation starts and stays
+   * in it: the greeting, the agent's replies and translated forms. Anything
+   * else is ignored and the agent's own language setting applies.
+   */
+  language?: string;
 }
 
 export interface VoiceSessionInfo {
@@ -60,6 +77,103 @@ export interface ChatSessionInfo {
   initial_greeting: { id: string; content: string } | null;
   idle_minutes: number | null;
   expires_at: string | null;
+}
+
+export interface InteractiveOption {
+  id: string;
+  title: string;
+  description?: string;
+  /** Absolute https URL. */
+  image?: { url: string };
+}
+
+/**
+ * A question with options for the app to draw (`interactive` event,
+ * field `interactive`). `layout` is a hint: 'buttons' (up to three short
+ * options), 'list', or 'cards' (options with pictures). Answer with
+ * `VolaiChatSession.reply`; the event's `content` holds the same question as
+ * numbered text. An `interactive_answered` event ({ id, option_ids, source })
+ * follows the first answer, also when the customer typed it: lock the options.
+ */
+export interface InteractiveMessage {
+  id: string;
+  kind: 'choices';
+  text: string;
+  layout: 'buttons' | 'list' | 'cards';
+  multi: boolean;
+  options: InteractiveOption[];
+  image?: { url: string };
+  /** Label for a control that opens the list, in the conversation language. */
+  button_label: string;
+}
+
+/**
+ * Structured information for the app to draw (`interactive` event, kind
+ * 'card'). `fields` are generic; `template` and `data` name the app's own
+ * card and carry its raw values, passed through from the agent. Answer an
+ * action with `VolaiChatSession.reply(id, [actionId])`.
+ */
+export interface InteractiveCard {
+  id: string;
+  kind: 'card';
+  text: string;
+  body?: string;
+  image?: { url: string };
+  fields: { label: string; value: string; progress?: number }[];
+  actions: { id: string; title: string }[];
+  template?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface InteractiveFormField {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'date' | 'checkbox' | 'rating' | 'scale' | 'tags';
+  required?: boolean;
+  options?: { value: string; label: string }[];
+  max_length?: number;
+  pattern?: string;
+  pattern_hint?: string;
+  help?: string;
+  sensitive?: boolean;
+  visible_when?: { field: string; equals: string | boolean };
+}
+
+/**
+ * A form for the app to draw (`interactive` event, kind 'form'). Labels are
+ * in the conversation language. Answer with `VolaiChatSession.submitForm` or
+ * `cancelForm`; `interactive_answered` ({ id, outcome, values }) closes it.
+ */
+export interface InteractiveForm {
+  id: string;
+  kind: 'form';
+  text: string;
+  form_key: string;
+  language: string;
+  form: { title: string; submit_label: string; intro?: string; fields: InteractiveFormField[] };
+  /** Values the agent already knew, by field key. */
+  prefill: Record<string, unknown>;
+}
+
+/**
+ * A step of a guided flow that the app carries out in its own screens: a
+ * login, a payment (`client_action` event; the fields sit on the event
+ * itself). Do the work, then give `token` to your backend, which reports the
+ * result with the secret key (`POST /client-actions/complete`). The app can
+ * only say that the step was cancelled or failed:
+ * `VolaiChatSession.reportClientAction`. The flow's next message arrives on
+ * the event stream. The token lasts 30 minutes; the event is not replayed
+ * after a reconnect.
+ */
+export interface ClientAction {
+  type: 'client_action';
+  id: string;
+  /** The action's name as the flow's author wrote it, e.g. 'payment'. */
+  action: string;
+  params: Record<string, unknown>;
+  token: string;
+  /** Text to show the customer while the app works. */
+  content: string;
 }
 
 /** A file attached to a chat message, as stored in the conversation history. `url` is portal-relative. */
@@ -180,12 +294,63 @@ export class VolaiChatSession {
   }
 
   /**
-   * Upload a file for this conversation (multipart, field `file`). Files are
-   * accepted only while a human agent owns the chat: before a transfer the
-   * server answers 409 with `reason: attachments_unavailable` (the AI does
-   * not read files). Listen for `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED`
-   * to show or hide an attach control. One file, up to `max_bytes` (10 MB);
-   * images, audio, mp4/webm/ogg, PDF, Office documents, text and CSV.
+   * Answer an interactive message with the options the customer tapped. The
+   * server records the chosen titles as the customer's message; the reply
+   * arrives like the reply to any message. 409 `interactive_not_found` when
+   * the question is not part of this session.
+   */
+  async reply(interactiveId: string, optionIds: string[], options: { messageId?: string } = {}): Promise<Record<string, unknown>> {
+    const messageId = options.messageId || crypto.randomUUID();
+    return this.client.request(`/sessions/${this.info.session_id}/messages`, {
+      method: 'POST', key: this.info.chat_token,
+      body: { message_id: messageId, interaction_reply: { interactive_id: interactiveId, option_ids: optionIds } },
+      raw: true,
+    }) as Promise<Record<string, unknown>>;
+  }
+
+  /**
+   * Send a form's answers by field key. Throws VolaiApiError 422 with
+   * `body.reason === 'invalid_form'` and `body.errors` (one message per field
+   * key) when the server refuses them: show the errors and keep the form open.
+   */
+  async submitForm(interactiveId: string, values: Record<string, unknown>, options: { messageId?: string } = {}): Promise<Record<string, unknown>> {
+    const messageId = options.messageId || crypto.randomUUID();
+    return this.client.request(`/sessions/${this.info.session_id}/messages`, {
+      method: 'POST', key: this.info.chat_token,
+      body: { message_id: messageId, interaction_reply: { interactive_id: interactiveId, values } },
+      raw: true,
+    }) as Promise<Record<string, unknown>>;
+  }
+
+  /** Close a form without sending it. */
+  async cancelForm(interactiveId: string, options: { messageId?: string } = {}): Promise<Record<string, unknown>> {
+    const messageId = options.messageId || crypto.randomUUID();
+    return this.client.request(`/sessions/${this.info.session_id}/messages`, {
+      method: 'POST', key: this.info.chat_token,
+      body: { message_id: messageId, interaction_reply: { interactive_id: interactiveId, cancelled: true } },
+      raw: true,
+    }) as Promise<Record<string, unknown>>;
+  }
+
+  /**
+   * Tell the flow that a client action was cancelled by the customer or
+   * failed in the app. Success cannot be reported from the app: your backend
+   * reports it with the secret key. 409 when the action no longer waits.
+   */
+  async reportClientAction(actionId: string, outcome: 'cancelled' | 'failed'): Promise<Record<string, unknown>> {
+    return this.client.request(`/sessions/${this.info.session_id}/client-actions/${encodeURIComponent(actionId)}`, {
+      method: 'POST', key: this.info.chat_token, body: { outcome },
+    }) as Promise<Record<string, unknown>>;
+  }
+
+  /**
+   * Upload a file for this conversation (multipart, field `file`), at any
+   * point of the chat. With a human agent on the chat the file reaches the
+   * agent; while the AI owns it the AI agent's Attachments setting answers
+   * (an automatic reply, optionally a transfer to a human agent). Servers
+   * older than 1.3.104 answer 409 with `reason: attachments_unavailable`
+   * before a transfer. One file, up to `max_bytes` (10 MB); images, audio,
+   * mp4/webm/ogg, PDF, Office documents, text and CSV.
    */
   async uploadAttachment(file: Blob, options: { filename?: string; signal?: AbortSignal } = {}): Promise<UploadedAttachment> {
     const form = new FormData();
@@ -289,6 +454,8 @@ export class VolaiClient {
         ...(input.verificationTokens ? { verification_tokens: input.verificationTokens } : {}),
         ...(input.sessionGrant ? { session_grant: input.sessionGrant } : {}),
         ...(input.publicLinkPassword ? { public_link_password: input.publicLinkPassword } : {}),
+        ...(input.capabilities?.length ? { capabilities: input.capabilities } : {}),
+        ...(input.language ? { language: input.language } : {}),
       },
     }) as Promise<VoiceSessionInfo | ChatSessionInfo>;
   }

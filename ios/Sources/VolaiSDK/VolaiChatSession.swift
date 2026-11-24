@@ -12,6 +12,11 @@ public final class VolaiChatSession {
 
     /// Every event the server sends (`chat`, `chunk`, `chat_complete`, `human_chat`, `typing`,
     /// `system`, `LIVE_AGENT_CONNECTED`, `LIVE_AGENT_DISCONNECTED`, `SESSION_ENDED`, `error`, ...).
+    ///
+    /// With `SessionRequest.capabilities` set, also `interactive` (its `interactive` object is a
+    /// question with options, a form or a card, by `kind`), `interactive_answered` (lock what
+    /// was drawn) and `client_action` (a step the app carries out: `id`, `action`, `params`,
+    /// `token`, `content`).
     public let events: AsyncStream<JSONObject>
 
     init(client: VolaiClient, info: ChatSessionInfo) {
@@ -96,6 +101,49 @@ public final class VolaiChatSession {
         return messageId
     }
 
+    /// Answers an `interactive` event with the options the customer tapped: a question's
+    /// options, or a card's action. The server records the chosen titles as the customer's
+    /// message and the reply arrives on `events`. 409 `interactive_not_found` when it can
+    /// no longer be answered.
+    @discardableResult
+    public func reply(interactiveId: String, optionIds: [String], messageId: String = UUID().uuidString) async throws -> String {
+        try await interactionReply(["interactive_id": interactiveId, "option_ids": optionIds], messageId: messageId)
+    }
+
+    /// Sends a form's answers by field key (leave out fields hidden by `visible_when`).
+    /// Throws `VolaiError.invalidForm` with one message per field when the server refuses
+    /// them: show the messages and keep the form open.
+    @discardableResult
+    public func submitForm(interactiveId: String, values: [String: Any], messageId: String = UUID().uuidString) async throws -> String {
+        try await interactionReply(["interactive_id": interactiveId, "values": values], messageId: messageId)
+    }
+
+    /// Closes a form without sending it.
+    @discardableResult
+    public func cancelForm(interactiveId: String, messageId: String = UUID().uuidString) async throws -> String {
+        try await interactionReply(["interactive_id": interactiveId, "cancelled": true], messageId: messageId)
+    }
+
+    /// Sends a raw `interaction_reply` object (docs/openapi.yaml); `reply`, `submitForm`
+    /// and `cancelForm` build it for you.
+    @discardableResult
+    public func interactionReply(_ reply: [String: Any], messageId: String = UUID().uuidString) async throws -> String {
+        try await client.request("/sessions/\(info.sessionId)/messages", method: "POST", key: info.chatToken,
+                                 body: ["message_id": messageId, "interaction_reply": reply])
+        return messageId
+    }
+
+    /// Tells a guided flow that a `client_action` was cancelled by the customer or failed
+    /// in the app (`outcome` is `cancelled` or `failed`). Success cannot be reported from
+    /// the app: hand the event's `token` to your backend, which reports the result with
+    /// the secret key. The flow's next message arrives on `events`. 409 when the action
+    /// no longer waits.
+    public func reportClientAction(actionId: String, outcome: String) async throws {
+        let safe = actionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? actionId
+        try await client.request("/sessions/\(info.sessionId)/client-actions/\(safe)", method: "POST", key: info.chatToken,
+                                 body: ["outcome": outcome == "cancelled" ? "cancelled" : "failed"])
+    }
+
     /// Sends a text message carrying an already uploaded attachment.
     @discardableResult
     public func send(_ content: String, messageId: String = UUID().uuidString, attachment: ChatAttachment) async throws -> String {
@@ -104,11 +152,11 @@ public final class VolaiChatSession {
 
     /// Uploads a file for this conversation (`POST /sessions/{id}/attachments`).
     ///
-    /// Files are accepted only while a human agent owns the chat: before a transfer the
-    /// server answers 409 with `reason: attachments_unavailable` (the AI does not read
-    /// files). Watch `LIVE_AGENT_CONNECTED` / `LIVE_AGENT_DISCONNECTED` on `events` to show
-    /// or hide an attach control. One file of up to 10 MB: images, audio, mp4/webm/ogg,
-    /// PDF, Office documents, text and CSV.
+    /// Files are accepted at any point of the chat. With a human agent on the chat the file
+    /// reaches the agent; while the AI owns it the AI agent's Attachments setting answers (an
+    /// automatic reply, optionally a transfer to a human agent). Servers older than 1.3.104
+    /// answer 409 with `reason: attachments_unavailable` before a transfer. One file of up to
+    /// 10 MB: images, audio, mp4/webm/ogg, PDF, Office documents, text and CSV.
     public func uploadAttachment(_ data: Data, filename: String, mimeType: String) async throws -> ChatAttachment {
         let json = try await client.upload("/sessions/\(info.sessionId)/attachments", key: info.chatToken,
                                            fileData: data, filename: filename, mimeType: mimeType)
